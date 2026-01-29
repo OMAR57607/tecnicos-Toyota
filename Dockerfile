@@ -33,5 +33,5 @@ RUN sed -i 's|</head>|<style>#stAppLoading { background-image: url("boot_logo.pn
 # Copiamos el resto de tus archivos (app.py, etc.)
 COPY . .
 
-# Comando de arranque (Asegúrate de que tu archivo principal se llame automatizacion.py)
-CMD sh -c "streamlit run automatizacion.py --server.port=$PORT --server.address=0.0.0.0"
+# Comando de arranque (Asegúrate de que tu archivo principal se llame app_tecnico.py)
+CMD sh -c "streamlit run app_tecnico.py --server.port=$PORT --server.address=0.0.0.0"
