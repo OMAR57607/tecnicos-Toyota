@@ -31,29 +31,28 @@ st.markdown("""
 @st.cache_resource
 def init_supabase():
     try:
-        url = st.secrets["supabase"]["https://vbkoyhpiknfbaijbroan.supabase.co"]
-        key = st.secrets["supabase"]["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZia295aHBpa25mYmFpamJyb2FuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5NjQ3NDEsImV4cCI6MjA4NDU0MDc0MX0.wQDJXqkUAzar73DRoLlGUoloMgHM4-V0JhP4jSMTPOk"]
+        # CORRECCIÓN: Nombres de claves corregidos
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
         return create_client(url, key)
-    except: return None
+    except Exception as e:
+        # Esto imprimirá el error real en la consola de Streamlit/Railway
+        st.sidebar.error(f"Error de secretos: {e}")
+        return None
 
 supabase = init_supabase()
 
 # ==========================================
-# 3. LÓGICA DE ESTADO (Anti-Desconexión)
+# 3. LÓGICA DE ESTADO
 # ==========================================
 
-# Función para limpiar el formulario MANUALMENTE sin romper la sesión
 def limpiar_formulario():
-    # Lista de keys (nombres) de tus inputs
     campos = ["orden_input", "vin_input", "auto_input", "anio_input", "fallas_input", "comentarios_input"]
     for campo in campos:
         if campo in st.session_state:
-            st.session_state[campo] = "" # Los vaciamos uno por uno
-    
-    # Limpiar el uploader es un truco: cambiamos su key
+            st.session_state[campo] = ""
     st.session_state["uploader_key"] = str(uuid.uuid4())
 
-# Inicializar key del uploader si no existe
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = str(uuid.uuid4())
 
@@ -63,20 +62,21 @@ if "uploader_key" not in st.session_state:
 
 col_logo, col_titulo = st.columns([1, 3])
 with col_logo:
-    if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+    # Asegúrate de que logo.png esté en la misma carpeta que el script
+    if os.path.exists("logo.png"): 
+        st.image("logo.png", use_container_width=True)
 with col_titulo:
     st.markdown("## 🛠️ Reporte Técnico")
 
 if not supabase:
-    st.error("⚠️ Error de conexión: Configurar secrets.toml")
+    st.error("⚠️ Error de conexión: Configurar correctamente st.secrets en .toml o Railway")
     st.stop()
 
 st.markdown("---")
 
-# --- SECCIÓN 1: DATOS (Usando keys estáticas para estabilidad) ---
+# --- SECCIÓN 1: DATOS ---
 st.subheader("📋 Datos del Vehículo")
 
-# Las keys ahora son fijas (ej: "orden_input"). Si recargas la página, Streamlit intentará mantener el valor.
 orden = st.text_input("ORDEN / PLACAS", placeholder="Obligatorio", key="orden_input")
 
 col1, col2, col3 = st.columns([2, 1.5, 1])
@@ -95,7 +95,6 @@ with col_comentarios:
     comentarios = st.text_area("COMENTARIOS", height=120, key="comentarios_input")
 
 # --- SECCIÓN 3: FOTOS ---
-# El uploader es el ÚNICO que necesita key dinámica para limpiarse
 img_files = st.file_uploader(
     "ADJUNTAR FOTOS", 
     accept_multiple_files=True, 
@@ -109,21 +108,18 @@ if img_files:
     st.write(" ")
     if st.button(f"📤 ENVIAR REPORTE ({len(img_files)})", type="primary", use_container_width=True):
         
-        # Validaciones
         errores = []
         if not orden: errores.append("Falta Orden")
         if not vin: errores.append("Falta VIN")
-        if not auto: errores.append("Falta Auto")
-        if not anio: errores.append("Falta Año")
         
         if errores:
             for err in errores: st.error(f"⚠️ {err}")
         else:
             try:
                 uploaded_urls = []
-                my_bar = st.progress(0, text="Subiendo...")
+                my_bar = st.progress(0, text="Subiendo imágenes...")
 
-                # 1. Subir Fotos
+                # 1. Subir Fotos al Storage
                 for i, img in enumerate(img_files):
                     file_bytes = img.getvalue()
                     ext = img.name.split('.')[-1]
@@ -135,11 +131,12 @@ if img_files:
                     )
                     
                     res = supabase.storage.from_("evidencias-taller").get_public_url(filename)
-                    final_url = res if isinstance(res, str) else res.get('publicUrl') or res.public_url
+                    # Manejo de respuesta de URL pública
+                    final_url = res.public_url if hasattr(res, 'public_url') else res
                     uploaded_urls.append(final_url)
                     my_bar.progress(int(((i + 1) / len(img_files)) * 100))
 
-                # 2. Insertar Datos
+                # 2. Insertar Datos en la Tabla
                 datos = {
                     "orden_placas": orden.upper().strip(),
                     "vin": vin.upper().strip(),
@@ -153,11 +150,10 @@ if img_files:
                 supabase.table("evidencias_taller").insert(datos).execute()
 
                 my_bar.progress(100, text="✅ Enviado correctamente")
-                time.sleep(1)
+                time.sleep(1.5)
                 
-                # 3. LIMPIEZA SEGURA
-                limpiar_formulario() # Llamamos a la función que vacía los campos
-                st.rerun() # Recargamos para mostrar todo limpio
+                limpiar_formulario()
+                st.rerun()
 
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error(f"Error al subir: {str(e)}")
