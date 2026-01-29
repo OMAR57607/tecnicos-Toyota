@@ -5,39 +5,20 @@ import time
 import os
 
 # ==========================================
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
+# 1. CONFIGURACIÓN (Debe ir primero)
 # ==========================================
-st.set_page_config(
-    page_title="Recepción Toyota", 
-    page_icon="🚗", 
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Recepción Toyota", page_icon="🚗", layout="centered")
 
+# CSS Ajustado
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 2rem !important;
-    }
-
-    .stTextInput input, .stTextArea textarea { 
-        font-size: 16px !important; 
-        border-radius: 8px !important;
-    }
-    
+    .stTextInput input, .stTextArea textarea { font-size: 16px !important; }
     [data-testid="stFileUploader"] {
-        padding: 15px; 
-        border: 2px dashed #EB0A1E; 
-        border-radius: 12px;
-        background-color: #f8f9fa; 
-        text-align: center;
+        padding: 10px; border: 2px dashed #EB0A1E; border-radius: 10px;
+        background-color: #f9f9f9; text-align: center;
     }
-    
     @media (prefers-color-scheme: dark) {
         [data-testid="stFileUploader"] { background-color: #262730; }
     }
@@ -49,133 +30,134 @@ st.markdown("""
 # ==========================================
 @st.cache_resource
 def init_supabase():
-    # Prioridad 1: Variables de Entorno (Railway)
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    
-    # Prioridad 2: Secrets (Local)
-    if not url or not key:
-        try:
-            url = st.secrets["SUPABASE_URL"]
-            key = st.secrets["SUPABASE_KEY"]
-        except: pass
-        
-    if not url or not key:
-        return None
-
-    return create_client(url, key)
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
+        return create_client(url, key)
+    except: return None
 
 supabase = init_supabase()
 
 # ==========================================
-# 3. GESTIÓN DE ESTADO
+# 3. LÓGICA DE ESTADO (Anti-Desconexión)
 # ==========================================
+
+# Función para limpiar el formulario MANUALMENTE sin romper la sesión
+def limpiar_formulario():
+    # Lista de keys (nombres) de tus inputs
+    campos = ["orden_input", "vin_input", "auto_input", "anio_input", "fallas_input", "comentarios_input"]
+    for campo in campos:
+        if campo in st.session_state:
+            st.session_state[campo] = "" # Los vaciamos uno por uno
+    
+    # Limpiar el uploader es un truco: cambiamos su key
+    st.session_state["uploader_key"] = str(uuid.uuid4())
+
+# Inicializar key del uploader si no existe
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = str(uuid.uuid4())
 
-def limpiar_formulario():
-    campos = ["orden", "vin", "auto", "anio", "fallas", "comentarios"]
-    for campo in campos:
-        if f"{campo}_input" in st.session_state:
-            st.session_state[f"{campo}_input"] = ""
-    st.session_state["uploader_key"] = str(uuid.uuid4())
-
 # ==========================================
-# 4. INTERFAZ DE USUARIO
+# 4. INTERFAZ
 # ==========================================
-c_izq, c_cen, c_der = st.columns([1, 2, 1])
-with c_cen:
-    if os.path.exists("logo.png"): 
-        st.image("logo.png", use_container_width=True)
-    else:
-        st.markdown("<h1 style='text-align: center; color: #EB0A1E;'>TOYOTA</h1>", unsafe_allow_html=True)
 
-st.markdown("<h3 style='text-align: center; margin-top: -15px; color: #555;'>🛠️ Reporte Técnico</h3>", unsafe_allow_html=True)
-st.markdown("---")
+col_logo, col_titulo = st.columns([1, 3])
+with col_logo:
+    if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+with col_titulo:
+    st.markdown("## 🛠️ Reporte Técnico")
 
 if not supabase:
-    st.error("❌ Error: No se detectaron credenciales de Supabase.")
+    st.error("⚠️ Error de conexión: Configurar secrets.toml")
     st.stop()
 
-# --- FORMULARIO ---
-st.caption("📋 **DATOS DE IDENTIFICACIÓN**")
-orden = st.text_input("ORDEN / PLACAS", placeholder="Requerido", key="orden_input")
+st.markdown("---")
 
-c1, c2, c3 = st.columns([2, 1.5, 1])
-with c1:
-    vin = st.text_input("VIN (Últimos 8 o completo)", key="vin_input")
-with c2:
-    auto = st.text_input("MODELO", placeholder="Ej. Tacoma", key="auto_input")
-with c3:
+# --- SECCIÓN 1: DATOS (Usando keys estáticas para estabilidad) ---
+st.subheader("📋 Datos del Vehículo")
+
+# Las keys ahora son fijas (ej: "orden_input"). Si recargas la página, Streamlit intentará mantener el valor.
+orden = st.text_input("ORDEN / PLACAS", placeholder="Obligatorio", key="orden_input")
+
+col1, col2, col3 = st.columns([2, 1.5, 1])
+with col1:
+    vin = st.text_input("VIN (17 Dígitos)", max_chars=17, key="vin_input")
+with col2:
+    auto = st.text_input("AUTO", placeholder="Ej. Hilux", key="auto_input")
+with col3:
     anio = st.text_input("AÑO", placeholder="2024", key="anio_input")
 
-st.write("") 
-st.caption("🔧 **DIAGNÓSTICO**")
-fallas = st.text_area("FALLAS / REFACCIONES", height=100, placeholder="Describe las fallas...", key="fallas_input")
-comentarios = st.text_area("OBSERVACIONES ADICIONALES", height=80, key="comentarios_input")
+# --- SECCIÓN 2: DIAGNÓSTICO ---
+col_fallas, col_comentarios = st.columns(2)
+with col_fallas:
+    fallas = st.text_area("FALLAS / REFACCIONES", height=120, key="fallas_input")
+with col_comentarios:
+    comentarios = st.text_area("COMENTARIOS", height=120, key="comentarios_input")
 
-st.write("") 
-st.caption("📸 **EVIDENCIA FOTOGRÁFICA**")
+# --- SECCIÓN 3: FOTOS ---
+# El uploader es el ÚNICO que necesita key dinámica para limpiarse
 img_files = st.file_uploader(
-    "Subir Fotos", 
+    "ADJUNTAR FOTOS", 
     accept_multiple_files=True, 
     type=['png', 'jpg', 'jpeg', 'webp'],
     label_visibility="collapsed",
-    key=st.session_state["uploader_key"]
+    key=st.session_state["uploader_key"] 
 )
 
-st.write("---")
-
-if st.button("📤 ENVIAR REPORTE A NUBE", type="primary", use_container_width=True):
-    errores = []
-    if not orden: errores.append("El campo 'Orden / Placas' es obligatorio.")
-    if not auto: errores.append("El campo 'Modelo' es obligatorio.")
-    
-    if errores:
-        for e in errores: st.error(f"⚠️ {e}")
-    else:
-        try:
-            with st.status("🚀 Procesando reporte...", expanded=True) as status:
+# --- BOTÓN DE ENVÍO ---
+if img_files:
+    st.write(" ")
+    if st.button(f"📤 ENVIAR REPORTE ({len(img_files)})", type="primary", use_container_width=True):
+        
+        # Validaciones
+        errores = []
+        if not orden: errores.append("Falta Orden")
+        if not vin: errores.append("Falta VIN")
+        if not auto: errores.append("Falta Auto")
+        if not anio: errores.append("Falta Año")
+        
+        if errores:
+            for err in errores: st.error(f"⚠️ {err}")
+        else:
+            try:
                 uploaded_urls = []
-                
-                if img_files:
-                    st.write(f"Subiendo {len(img_files)} imágenes...")
-                    progress_bar = st.progress(0)
+                my_bar = st.progress(0, text="Subiendo...")
+
+                # 1. Subir Fotos
+                for i, img in enumerate(img_files):
+                    file_bytes = img.getvalue()
+                    ext = img.name.split('.')[-1]
+                    clean_orden = orden.strip().replace(" ", "_")
+                    filename = f"{clean_orden}_{vin[-4:]}_{uuid.uuid4().hex[:6]}.{ext}"
                     
-                    for i, img in enumerate(img_files):
-                        file_bytes = img.getvalue()
-                        ext = img.name.split('.')[-1]
-                        clean_orden = "".join(e for e in orden if e.isalnum())
-                        filename = f"{clean_orden}_{uuid.uuid4().hex[:6]}.{ext}"
-                        
-                        supabase.storage.from_("evidencias-taller").upload(
-                            filename, file_bytes, {"content-type": img.type}
-                        )
-                        
-                        res_url = supabase.storage.from_("evidencias-taller").get_public_url(filename)
-                        # Compatibilidad con diferentes versiones de la librería
-                        final_url = res_url if isinstance(res_url, str) else (getattr(res_url, 'public_url', None) or res_url.get('publicUrl'))
-                        uploaded_urls.append(final_url)
-                        progress_bar.progress(int(((i + 1) / len(img_files)) * 100))
-                
-                datos_db = {
+                    supabase.storage.from_("evidencias-taller").upload(
+                        filename, file_bytes, {"content-type": img.type}
+                    )
+                    
+                    res = supabase.storage.from_("evidencias-taller").get_public_url(filename)
+                    final_url = res if isinstance(res, str) else res.get('publicUrl') or res.public_url
+                    uploaded_urls.append(final_url)
+                    my_bar.progress(int(((i + 1) / len(img_files)) * 100))
+
+                # 2. Insertar Datos
+                datos = {
                     "orden_placas": orden.upper().strip(),
                     "vin": vin.upper().strip(),
                     "auto_modelo": auto.upper().strip(),
-                    "anio": int(anio) if (anio and anio.isdigit()) else 0,
+                    "anio": int(anio) if anio.isdigit() else 0,
                     "fallas_refacciones": fallas.upper(),
                     "comentarios": comentarios.upper(),
-                    "evidencia_fotos": uploaded_urls,
-                    "estado": "Pendiente"
+                    "evidencia_fotos": uploaded_urls
                 }
                 
-                supabase.table("evidencias_taller").insert(datos_db).execute()
-                status.update(label="✅ ¡Reporte Enviado con Éxito!", state="complete", expanded=False)
-            
-            st.success(f"Orden {orden} registrada correctamente.")
-            time.sleep(1.5)
-            limpiar_formulario()
-            st.rerun()
+                supabase.table("evidencias_taller").insert(datos).execute()
 
-        except Exception as e:
-            st.error(f"❌ Error al enviar: {str(e)}")
+                my_bar.progress(100, text="✅ Enviado correctamente")
+                time.sleep(1)
+                
+                # 3. LIMPIEZA SEGURA
+                limpiar_formulario() # Llamamos a la función que vacía los campos
+                st.rerun() # Recargamos para mostrar todo limpio
+
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
