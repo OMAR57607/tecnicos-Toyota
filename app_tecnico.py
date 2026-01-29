@@ -31,8 +31,8 @@ st.markdown("""
 @st.cache_resource
 def init_supabase():
     try:
-        url = st.secrets["supabase"]["url"]
-        key = st.secrets["supabase"]["key"]
+        url = st.secrets["supabase"]["https://vbkoyhpiknfbaijbroan.supabase.co"]
+        key = st.secrets["supabase"]["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZia295aHBpa25mYmFpamJyb2FuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5NjQ3NDEsImV4cCI6MjA4NDU0MDc0MX0.wQDJXqkUAzar73DRoLlGUoloMgHM4-V0JhP4jSMTPOk"]
         return create_client(url, key)
     except: return None
 
