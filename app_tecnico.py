@@ -4,55 +4,12 @@ import uuid
 import time
 import os
 
-
-# --- FUNCIÓN DE CONEXIÓN ROBUSTA (Copia esto) ---
-def init_supabase_blindado():
-    # 1. Intenta leer variables de entorno (Railway / Docker)
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-
-    # 2. Si no las encuentra, busca en st.secrets (Local / Streamlit Cloud)
-    if not url or not key:
-        try:
-            # Opción A: Estructura anidada [supabase] en toml
-            if "supabase" in st.secrets:
-                url = st.secrets["supabase"]["url"]
-                key = st.secrets["supabase"]["key"]
-            # Opción B: Estructura plana SUPABASE_URL en toml
-            else:
-                url = st.secrets.get("SUPABASE_URL")
-                key = st.secrets.get("SUPABASE_KEY")
-        except Exception:
-            pass
-
-    # 3. Validación final
-    if not url or not key:
-        st.error("❌ ERROR CRÍTICO: No se detectaron las credenciales (SUPABASE_URL / SUPABASE_KEY). Configura las Variables en Railway.")
-        st.stop()
-        return None
-
-    # Limpieza de strings por si se colaron comillas extra
-    url_clean = url.replace("'", "").replace('"', "").strip()
-    key_clean = key.replace("'", "").replace('"', "").strip()
-
-    try:
-        return create_client(url_clean, key_clean)
-    except Exception as e:
-        st.error(f"Error al conectar con Supabase: {e}")
-        return None
-
-# --- FIN DE LA FUNCIÓN ---
-
-# Llama a la función para iniciar la conexión
-supabase = init_supabase_blindado()
-
-
 # ==========================================
-# 1. CONFIGURACIÓN (Debe ir primero)
+# 1. CONFIGURACIÓN (SIEMPRE VA PRIMERO)
 # ==========================================
 st.set_page_config(page_title="Recepción Toyota", page_icon="🚗", layout="centered")
 
-# CSS Ajustado (Original conservado)
+# CSS Ajustado
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -69,38 +26,65 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXIÓN SUPABASE (Corregido)
+# 2. CONEXIÓN BLINDADA (SOLO UNA Y CON CACHÉ)
 # ==========================================
-@st.cache_resource
-def init_supabase():
-    try:
-        # CORRECCIÓN AQUÍ: Se agregaron las etiquetas url y key
-        url = st.secrets["supabase"]["url"]
-        key = st.secrets["supabase"]["key"]
-        return create_client(url, key)
-    except: 
+@st.cache_resource(ttl="2h")
+def init_supabase_blindado():
+    # 1. Intenta leer variables de entorno (Railway / Docker)
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+
+    # 2. Si no las encuentra, busca en st.secrets (Local / Streamlit Cloud)
+    if not url or not key:
+        try:
+            # Opción A: Estructura anidada [supabase]
+            if "supabase" in st.secrets:
+                url = st.secrets["supabase"]["url"]
+                key = st.secrets["supabase"]["key"]
+            # Opción B: Estructura plana
+            else:
+                url = st.secrets.get("SUPABASE_URL")
+                key = st.secrets.get("SUPABASE_KEY")
+        except Exception:
+            pass
+
+    # 3. Validación final
+    if not url or not key:
+        st.error("❌ ERROR CRÍTICO: No se detectaron las credenciales (SUPABASE_URL / SUPABASE_KEY). Configura las Variables en Railway.")
         return None
 
-supabase = init_supabase()
+    # Limpieza de strings
+    url_clean = url.replace("'", "").replace('"', "").strip()
+    key_clean = key.replace("'", "").replace('"', "").strip()
+
+    try:
+        return create_client(url_clean, key_clean)
+    except Exception as e:
+        st.error(f"Error al conectar con Supabase: {e}")
+        return None
+
+# Iniciamos la conexión ÚNICA
+supabase = init_supabase_blindado()
+
+# Si falla la conexión, detenemos la app aquí para no causar más errores
+if not supabase:
+    st.stop()
 
 # ==========================================
 # 3. LÓGICA DE ESTADO (Anti-Desconexión)
 # ==========================================
 
-# Iniciamos una "versión" del formulario para poder limpiarlo sin errores
 if "form_iter" not in st.session_state:
     st.session_state["form_iter"] = 0
 
 def limpiar_formulario():
-    # En lugar de borrar uno por uno (que da error), cambiamos la versión
-    # Esto limpia TODO (incluyendo fotos) al instante
     st.session_state["form_iter"] += 1
 
 # Atajo para la versión actual
 v = st.session_state["form_iter"]
 
 # ==========================================
-# 4. INTERFAZ
+# 4. INTERFAZ GRÁFICA
 # ==========================================
 
 col_logo, col_titulo = st.columns([1, 3])
@@ -110,13 +94,9 @@ with col_logo:
 with col_titulo:
     st.markdown("## 🛠️ Reporte Técnico")
 
-if not supabase:
-    st.error("⚠️ Error de conexión: Configurar secrets.toml")
-    st.stop()
-
 st.markdown("---")
 
-# --- SECCIÓN 1: DATOS (Keys dinámicas con _{v} para limpieza segura) ---
+# --- SECCIÓN 1: DATOS ---
 st.subheader("📋 Datos del Vehículo")
 
 orden = st.text_input("ORDEN / PLACAS", placeholder="Obligatorio", key=f"orden_input_{v}")
@@ -142,7 +122,7 @@ img_files = st.file_uploader(
     accept_multiple_files=True, 
     type=['png', 'jpg', 'jpeg', 'webp'],
     label_visibility="collapsed",
-    key=f"uploader_{v}" # El uploader ahora se limpia correctamente
+    key=f"uploader_{v}"
 )
 
 # --- BOTÓN DE ENVÍO ---
@@ -176,7 +156,6 @@ if img_files:
                     )
                     
                     res = supabase.storage.from_("evidencias-taller").get_public_url(filename)
-                    # Ajuste para obtener URL según versión de librería
                     final_url = res.public_url if hasattr(res, 'public_url') else res
                     uploaded_urls.append(final_url)
                     my_bar.progress(int(((i + 1) / len(img_files)) * 100))
