@@ -5,10 +5,6 @@ import time
 import os
 
 
-import streamlit as st
-import os
-from supabase import create_client
-
 # --- FUNCIÓN DE CONEXIÓN ROBUSTA (Copia esto) ---
 def init_supabase_blindado():
     # 1. Intenta leer variables de entorno (Railway / Docker)
