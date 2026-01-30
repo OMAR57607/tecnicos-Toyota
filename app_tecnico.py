@@ -4,6 +4,53 @@ import uuid
 import time
 import os
 
+
+import streamlit as st
+import os
+from supabase import create_client
+
+# --- FUNCIÓN DE CONEXIÓN ROBUSTA (Copia esto) ---
+def init_supabase_blindado():
+    # 1. Intenta leer variables de entorno (Railway / Docker)
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+
+    # 2. Si no las encuentra, busca en st.secrets (Local / Streamlit Cloud)
+    if not url or not key:
+        try:
+            # Opción A: Estructura anidada [supabase] en toml
+            if "supabase" in st.secrets:
+                url = st.secrets["supabase"]["url"]
+                key = st.secrets["supabase"]["key"]
+            # Opción B: Estructura plana SUPABASE_URL en toml
+            else:
+                url = st.secrets.get("SUPABASE_URL")
+                key = st.secrets.get("SUPABASE_KEY")
+        except Exception:
+            pass
+
+    # 3. Validación final
+    if not url or not key:
+        st.error("❌ ERROR CRÍTICO: No se detectaron las credenciales (SUPABASE_URL / SUPABASE_KEY). Configura las Variables en Railway.")
+        st.stop()
+        return None
+
+    # Limpieza de strings por si se colaron comillas extra
+    url_clean = url.replace("'", "").replace('"', "").strip()
+    key_clean = key.replace("'", "").replace('"', "").strip()
+
+    try:
+        return create_client(url_clean, key_clean)
+    except Exception as e:
+        st.error(f"Error al conectar con Supabase: {e}")
+        return None
+
+# --- FIN DE LA FUNCIÓN ---
+
+# Llama a la función para iniciar la conexión
+supabase = init_supabase_blindado()
+
+
 # ==========================================
 # 1. CONFIGURACIÓN (Debe ir primero)
 # ==========================================
