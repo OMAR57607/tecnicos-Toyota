@@ -26,6 +26,8 @@ st.markdown("""
         font-weight: 800 !important;
         border-radius: 10px !important;
     }
+    /* Estilo para el resultado de búsqueda */
+    .stAlert { padding: 10px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -116,8 +118,8 @@ with c1:
 with c2:
     st.markdown("### 🔧 Sistema de Taller")
 
-# --- AQUÍ CREAMOS LAS PESTAÑAS ---
-tab1, tab2 = st.tabs(["📝 NUEVO REPORTE", "📂 HISTORIAL OFICINA"])
+# --- PESTAÑAS ---
+tab1, tab2 = st.tabs(["📝 NUEVO REPORTE", "📂 HISTORIAL Y BÚSQUEDA"])
 
 # ==========================================
 # PESTAÑA 1: FORMULARIO TÉCNICO
@@ -172,7 +174,7 @@ with tab1:
                         uploaded_urls.append(final_url)
                         barra.progress(int(((i + 1) / (len(img_files) + 1)) * 100))
 
-                    # 2. PDF
+                    # 2. PDF (Construcción robusta)
                     datos_temp = {
                         "tecnico": tecnico.upper(), "orden_placas": orden.upper(),
                         "auto_modelo": auto.upper(), "anio": int(anio),
@@ -181,10 +183,15 @@ with tab1:
                     pdf_bytes = generar_pdf(datos_temp)
                     
                     pdf_name = f"PDF_{orden}_{uuid.uuid4().hex[:4]}.pdf"
+                    
+                    # Subir al bucket público
                     supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_bytes, {"content-type": "application/pdf"})
                     
-                    res_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
-                    url_pdf_final = res_pdf if isinstance(res_pdf, str) else res_pdf.public_url
+                    # Construir URL manualmente para evitar fallos
+                    project_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL") or st.secrets["supabase"]["url"]
+                    project_url = project_url.replace("'", "").strip().rstrip("/")
+                    url_pdf_final = f"{project_url}/storage/v1/object/public/reportes-pdf/{pdf_name}"
+                    
                     barra.progress(100)
 
                     # 3. Base de Datos
@@ -214,7 +221,7 @@ with tab1:
 
     # Descarga local inmediata
     if st.session_state["pdf_data"]:
-        st.success("Reporte generado. Puedes descargarlo o verlo en la pestaña 'Historial'.")
+        st.success("Reporte generado.")
         st.download_button(
             label="📥 DESCARGAR PDF",
             data=st.session_state["pdf_data"],
@@ -222,48 +229,84 @@ with tab1:
             mime="application/pdf",
             use_container_width=True
         )
-        if st.button("🔄 Nuevo"):
+        if st.button("🔄 Nuevo Reporte"):
             reiniciar_formulario()
             st.rerun()
 
 # ==========================================
-# PESTAÑA 2: HISTORIAL (VISTA OFICINA)
+# PESTAÑA 2: HISTORIAL Y BÚSQUEDA
 # ==========================================
 with tab2:
-    st.subheader("📂 Últimos Reportes Generados")
-    if st.button("🔄 Actualizar Lista"):
-        st.rerun()
-        
+    st.subheader("🔍 Buscar y Visualizar")
+    
+    # --- ZONA DE BÚSQUEDA ---
+    col_search, col_btn = st.columns([3, 1])
+    with col_search:
+        # Input de búsqueda
+        busqueda = st.text_input("Buscar por Placa, Técnico o Modelo", placeholder="Ej: Juan, Yaris, 882...", label_visibility="collapsed")
+    with col_btn:
+        if st.button("🔄", use_container_width=True):
+            st.rerun()
+
+    # --- LÓGICA DE FILTRADO ---
     try:
-        # Traemos los últimos 10 reportes
-        response = supabase.table("evidencias_taller")\
-            .select("orden_placas, tecnico, auto_modelo, created_at, url_pdf")\
-            .order("created_at", desc=True)\
-            .limit(10)\
-            .execute()
-            
+        query = supabase.table("evidencias_taller").select("orden_placas, tecnico, auto_modelo, created_at, url_pdf").order("created_at", desc=True)
+        
+        if busqueda:
+            # Filtro inteligente: Busca el texto en cualquiera de las 3 columnas
+            st.caption(f"Mostrando resultados para: '{busqueda}'")
+            # Sintaxis de Supabase para OR: columna.ilike.%valor%
+            filtro_or = f"orden_placas.ilike.%{busqueda}%,tecnico.ilike.%{busqueda}%,auto_modelo.ilike.%{busqueda}%"
+            query = query.or_(filtro_or)
+        else:
+            # Si no busca nada, solo trae los últimos 10 (ahorra recursos)
+            st.caption("Mostrando los últimos 10 reportes recientes.")
+            query = query.limit(10)
+
+        response = query.execute()
         data = response.data
         
+        # --- VISUALIZACIÓN ---
         if data:
             for item in data:
-                # Diseño de cada fila del historial
                 with st.container():
-                    c_info, c_link = st.columns([3, 1])
+                    # Formato de fecha amigable
+                    fecha_obj = datetime.fromisoformat(item['created_at'])
+                    fecha_str = fecha_obj.strftime('%d/%m/%Y')
+                    hora_str = fecha_obj.strftime('%H:%M')
                     
-                    fecha = datetime.fromisoformat(item['created_at']).strftime('%d/%m %H:%M')
-                    titulo = f"**{item['orden_placas']}** | {item['auto_modelo']} ({item['tecnico']})"
+                    # Layout de la tarjeta
+                    c1, c2, c3 = st.columns([3, 2, 1.5])
                     
-                    c_info.markdown(f"{titulo}")
-                    c_info.caption(f"📅 {fecha}")
+                    with c1:
+                        st.markdown(f"**🚗 {item['orden_placas']}**")
+                        st.caption(f"Modelo: {item['auto_modelo']}")
                     
-                    if item.get('url_pdf'):
-                        c_link.markdown(f"[📄 **Ver PDF**]({item['url_pdf']})")
-                    else:
-                        c_link.caption("Sin PDF")
+                    with c2:
+                        st.write(f"👷 {item['tecnico']}")
+                        st.caption(f"{fecha_str} - {hora_str}")
+                        
+                    with c3:
+                        if item.get('url_pdf'):
+                            # Botón tipo enlace estilizado
+                            st.markdown(f"""
+                                <a href="{item['url_pdf']}" target="_blank" style="
+                                    text-decoration: none;
+                                    background-color: #d1e7dd;
+                                    color: #0f5132;
+                                    padding: 8px 12px;
+                                    border-radius: 8px;
+                                    font-weight: bold;
+                                    display: block;
+                                    text-align: center;
+                                ">📄 Ver PDF</a>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.warning("Sin PDF")
                     
                     st.divider()
         else:
-            st.info("No hay reportes registrados aún.")
+            st.info("🔍 No se encontraron reportes con esos datos.")
             
     except Exception as e:
-        st.error(f"Error al cargar historial: {e}")
+        st.error(f"Error cargando historial: {e}")
