@@ -26,8 +26,9 @@ st.markdown("""
         font-weight: 800 !important;
         border-radius: 10px !important;
     }
-    /* Estilo para el resultado de búsqueda */
+    /* Estilo para enlaces y alertas */
     .stAlert { padding: 10px !important; }
+    a { text-decoration: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -237,7 +238,13 @@ with tab1:
 # PESTAÑA 2: HISTORIAL Y BÚSQUEDA
 # ==========================================
 with tab2:
-    st.subheader("🔍 Buscar y Visualizar")
+    # Encabezado con Botón de Recarga
+    c_head, c_ref = st.columns([3, 1])
+    with c_head:
+        st.subheader("🔍 Historial y Búsqueda")
+    with c_ref:
+        if st.button("🔄 RECARGAR DATOS", use_container_width=True):
+            st.rerun()
     
     # --- ZONA DE BÚSQUEDA ---
     col_search, col_btn = st.columns([3, 1])
@@ -245,7 +252,7 @@ with tab2:
         # Input de búsqueda
         busqueda = st.text_input("Buscar por Placa, Técnico o Modelo", placeholder="Ej: Juan, Yaris, 882...", label_visibility="collapsed")
     with col_btn:
-        if st.button("🔄", use_container_width=True):
+        if st.button("🔎", use_container_width=True):
             st.rerun()
 
     # --- LÓGICA DE FILTRADO ---
@@ -253,13 +260,10 @@ with tab2:
         query = supabase.table("evidencias_taller").select("orden_placas, tecnico, auto_modelo, created_at, url_pdf").order("created_at", desc=True)
         
         if busqueda:
-            # Filtro inteligente: Busca el texto en cualquiera de las 3 columnas
             st.caption(f"Mostrando resultados para: '{busqueda}'")
-            # Sintaxis de Supabase para OR: columna.ilike.%valor%
             filtro_or = f"orden_placas.ilike.%{busqueda}%,tecnico.ilike.%{busqueda}%,auto_modelo.ilike.%{busqueda}%"
             query = query.or_(filtro_or)
         else:
-            # Si no busca nada, solo trae los últimos 10 (ahorra recursos)
             st.caption("Mostrando los últimos 10 reportes recientes.")
             query = query.limit(10)
 
@@ -270,7 +274,7 @@ with tab2:
         if data:
             for item in data:
                 with st.container():
-                    # Formato de fecha amigable
+                    # Formato de fecha
                     fecha_obj = datetime.fromisoformat(item['created_at'])
                     fecha_str = fecha_obj.strftime('%d/%m/%Y')
                     hora_str = fecha_obj.strftime('%H:%M')
@@ -288,7 +292,7 @@ with tab2:
                         
                     with c3:
                         if item.get('url_pdf'):
-                            # Botón tipo enlace estilizado
+                            # Botón tipo enlace HTML puro para evitar problemas de Streamlit
                             st.markdown(f"""
                                 <a href="{item['url_pdf']}" target="_blank" style="
                                     text-decoration: none;
@@ -299,6 +303,7 @@ with tab2:
                                     font-weight: bold;
                                     display: block;
                                     text-align: center;
+                                    border: 1px solid #0f5132;
                                 ">📄 Ver PDF</a>
                             """, unsafe_allow_html=True)
                         else:
