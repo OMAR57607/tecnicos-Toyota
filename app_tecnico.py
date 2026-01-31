@@ -4,44 +4,66 @@ import uuid
 import time
 import os
 from datetime import datetime
+from fpdf import FPDF  # <--- NUEVA LIBRERÍA (pip install fpdf2)
 
 # ==========================================
-# 1. CONFIGURACIÓN (MODO TALLER)
+# 1. CONFIGURACIÓN Y PDF LOGIC
 # ==========================================
 st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centered")
 
-# CSS: Letras grandes para facilitar lectura, SIN colores forzados
+def generar_pdf(datos):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Encabezado
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "REPORTE TÉCNICO DE TALLER", ln=True, align='C')
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 10, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='R')
+    pdf.ln(10)
+    
+    # Datos del Vehículo
+    pdf.set_fill_color(235, 10, 30) # Rojo Toyota
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, " DATOS DEL VEHÍCULO", ln=True, fill=True)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", '', 11)
+    pdf.ln(2)
+    pdf.cell(0, 7, f"Técnico: {datos['tecnico']}", ln=True)
+    pdf.cell(0, 7, f"Orden/Placas: {datos['orden_placas']}", ln=True)
+    pdf.cell(0, 7, f"Modelo: {datos['auto_modelo']} - Año: {datos['anio']}", ln=True)
+    
+    # Refacciones
+    pdf.ln(5)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, " REFACCIONES Y FALLAS", ln=True, fill=True)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", '', 11)
+    pdf.ln(2)
+    pdf.multi_cell(0, 7, datos['fallas_refacciones'])
+    
+    # Comentarios
+    if datos['comentarios']:
+        pdf.ln(5)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 8, " COMENTARIOS ADICIONALES", ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.multi_cell(0, 7, datos['comentarios'])
+
+    return pdf.output(dest='S').encode('latin-1')
+
+# CSS (Mismo que tenías)
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    
-    /* Aumentar tamaño de letra en inputs para dedos grandes/tablets */
-    .stTextInput input, .stSelectbox div, .stNumberInput input, .stTextArea textarea { 
-        font-size: 18px !important; 
-        min-height: 50px !important;
-    }
-    
-    /* Área de carga de fotos más visible y limpia */
-    [data-testid="stFileUploader"] {
-        padding: 15px; 
-        border: 2px dashed #EB0A1E; 
-        border-radius: 12px;
-        text-align: center;
-    }
-    
-    /* Estilos de Botones Personalizados */
-    div.stButton > button {
-        height: 65px !important;
-        font-size: 20px !important;
-        font-weight: 800 !important;
-        border-radius: 10px !important;
-        text-transform: uppercase;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    
-    /* Espaciado superior */
-    .block-container { padding-top: 1rem; }
+    .stTextInput input, .stSelectbox div, .stNumberInput input, .stTextArea textarea { font-size: 18px !important; min-height: 50px !important;}
+    [data-testid="stFileUploader"] { padding: 15px; border: 2px dashed #EB0A1E; border-radius: 12px; text-align: center;}
+    div.stButton > button { height: 65px !important; font-size: 20px !important; font-weight: 800 !important; border-radius: 10px !important;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -52,152 +74,101 @@ st.markdown("""
 def init_supabase_blindado():
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
-    
     if not url or not key:
         try:
-            if "supabase" in st.secrets:
-                url = st.secrets["supabase"]["url"]
-                key = st.secrets["supabase"]["key"]
-            else:
-                url = st.secrets.get("SUPABASE_URL")
-                key = st.secrets.get("SUPABASE_KEY")
+            url = st.secrets["supabase"]["url"]
+            key = st.secrets["supabase"]["key"]
         except: pass
-
     if not url or not key:
         st.error("❌ Error: Faltan credenciales de Supabase.")
         return None
-
-    return create_client(url.replace("'", "").strip(), key.replace("'", "").strip())
+    return create_client(url.strip(), key.strip())
 
 supabase = init_supabase_blindado()
 if not supabase: st.stop()
 
 # ==========================================
-# 3. GESTIÓN DE ESTADO (PERSISTENCIA)
+# 3. GESTIÓN DE ESTADO
 # ==========================================
 if "form_key" not in st.session_state:
     st.session_state["form_key"] = str(uuid.uuid4())
+if "pdf_data" not in st.session_state:
+    st.session_state["pdf_data"] = None
 
 def reiniciar_formulario():
-    # Cambiamos la key para limpiar los inputs del auto
     st.session_state["form_key"] = str(uuid.uuid4())
+    st.session_state["pdf_data"] = None
 
 # ==========================================
-# 4. INTERFAZ DE BAHÍA
+# 4. INTERFAZ
 # ==========================================
-
-# Encabezado
 c1, c2 = st.columns([1, 4])
 with c1:
     if os.path.exists("logo.png"): st.image("logo.png")
 with c2:
     st.markdown("### 🔧 Reporte Técnico")
 
-# --- ZONA 1: TÉCNICO (PERSISTENTE) ---
 tecnico = st.text_input("👷 NOMBRE DEL TÉCNICO", placeholder="Tu nombre aquí...", key="tecnico_persistente")
-
 if not tecnico:
     st.warning("👆 Escribe tu nombre para empezar.")
     st.stop() 
 
 st.divider()
-
-# Key dinámica para resetear tras envío
 key_act = st.session_state["form_key"]
 
-# --- ZONA 2: IDENTIFICACIÓN DEL AUTO (OBLIGATORIO) ---
 st.markdown("##### 🚗 Datos del Vehículo")
 col_a, col_b, col_c = st.columns([1.5, 1.5, 1])
-
 with col_a:
     orden = st.text_input("📋 ORDEN / PLACAS", placeholder="Obligatorio", key=f"ord_{key_act}")
-
 with col_b:
     modelos_toyota = ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Raize", "Tundra", "Sequoia", "Otro"]
     auto = st.selectbox("MODELO", modelos_toyota, key=f"mod_{key_act}")
-
 with col_c:
     anio = st.number_input("AÑO", min_value=1990, max_value=2030, value=2024, step=1, key=f"yr_{key_act}")
 
-# --- ZONA 3: LISTADO DE REFACCIONES (OBLIGATORIO) ---
 st.markdown("---")
 st.markdown("##### 🛠️ Listado de Refacciones / Fallas")
-st.caption("Usa el micrófono del teclado para dictar el listado.")
+fallas = st.text_area("Refacciones", height=150, key=f"fail_{key_act}", label_visibility="collapsed")
 
-fallas = st.text_area(
-    "Listado de Refacciones", 
-    height=150, 
-    placeholder="Ej: \n- Balatas delanteras\n- Amortiguador derecho\n- Servicio 20k", 
-    key=f"fail_{key_act}",
-    label_visibility="collapsed"
-)
+st.markdown("##### 📝 Comentarios Adicionales")
+comentarios = st.text_area("Observaciones", height=80, key=f"com_{key_act}", label_visibility="collapsed")
 
-# --- ZONA 4: COMENTARIOS ADICIONALES (OPCIONAL) ---
-st.markdown("##### 📝 Comentarios Adicionales (Opcional)")
-comentarios = st.text_area(
-    "Observaciones extra", 
-    height=80, 
-    placeholder="Ej: Cliente espera en sala, urge cotización...", 
-    key=f"com_{key_act}",
-    label_visibility="collapsed"
-)
-
-# --- ZONA 5: EVIDENCIA (OBLIGATORIO) ---
 st.markdown("##### 📸 Fotos Evidencia")
-img_files = st.file_uploader(
-    "Toca aquí para tomar fotos", 
-    accept_multiple_files=True, 
-    type=['png', 'jpg', 'jpeg'],
-    label_visibility="collapsed",
-    key=f"upl_{key_act}"
-)
+img_files = st.file_uploader("Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], key=f"upl_{key_act}", label_visibility="collapsed")
 
 st.markdown("---")
 
-# --- ZONA 6: BOTONES DE ACCIÓN (UX MEJORADA) ---
-# Validación: Orden, Auto, Año, Fallas y Fotos son OBLIGATORIOS.
 datos_completos = orden and auto and anio and fallas and img_files and tecnico
 
-# Usamos columnas para separar "Limpiar" de "Enviar"
-# Columna izquierda (1/3) para Limpiar
-# Columna derecha (2/3) para Enviar (Más grande porque es la acción principal)
 c_reset, c_send = st.columns([1, 2], gap="small")
 
 with c_reset:
-    # Botón Secundario: Permite borrar todo si se equivocó de orden
     if st.button("🗑️ LIMPIAR", type="secondary", use_container_width=True):
         reiniciar_formulario()
         st.rerun()
 
 with c_send:
-    # Botón Primario: Solo activo si hay datos
     if datos_completos:
         if st.button(f"🚀 ENVIAR ({len(img_files)})", type="primary", use_container_width=True):
             try:
                 uploaded_urls = []
-                barra = st.progress(0, text="Subiendo evidencia...")
+                barra = st.progress(0, text="Subiendo...")
                 
-                # 1. Subir imágenes
                 for i, img in enumerate(img_files):
                     ext = img.name.split('.')[-1]
-                    filename = f"{orden}_{tecnico.split()[0]}_{uuid.uuid4().hex[:4]}.{ext}"
-                    bucket = "evidencias-taller"
-                    
-                    supabase.storage.from_(bucket).upload(filename, img.getvalue(), {"content-type": img.type})
-                    res = supabase.storage.from_(bucket).get_public_url(filename)
-                    final_url = res if isinstance(res, str) else res.public_url
-                    uploaded_urls.append(final_url)
-                    
+                    filename = f"{orden}_{uuid.uuid4().hex[:4]}.{ext}"
+                    supabase.storage.from_("evidencias-taller").upload(filename, img.getvalue())
+                    res = supabase.storage.from_("evidencias-taller").get_public_url(filename)
+                    uploaded_urls.append(res if isinstance(res, str) else res.public_url)
                     barra.progress(int(((i + 1) / len(img_files)) * 100))
 
-                # 2. Insertar Datos
                 datos = {
                     "orden_placas": orden.upper().strip(),
                     "tecnico": tecnico.upper().strip(), 
                     "auto_modelo": auto.upper(),
                     "anio": int(anio),
                     "fallas_refacciones": fallas.upper(), 
-                    "comentarios": comentarios.upper() if comentarios else "",
+                    "comentarios": comentarios.upper(),
                     "evidencia_fotos": uploaded_urls,
                     "estado": "Pendiente",
                     "created_at": datetime.utcnow().isoformat()
@@ -205,15 +176,25 @@ with c_send:
                 
                 supabase.table("evidencias_taller").insert(datos).execute()
                 
-                barra.empty()
-                st.success(f"✅ Reporte enviado correctamente.")
-                time.sleep(1.5)
-                
-                reiniciar_formulario() 
-                st.rerun()
+                # Generar PDF para el estado de sesión
+                st.session_state["pdf_data"] = generar_pdf(datos)
+                st.success("✅ Reporte guardado.")
                 
             except Exception as e:
-                st.error(f"Error al enviar: {e}")
+                st.error(f"Error: {e}")
     else:
-        # Feedback visual si falta info
         st.button("🛑 FALTA INFORMACIÓN", disabled=True, use_container_width=True)
+
+# MOSTRAR BOTÓN DE DESCARGA SI EL PDF YA SE GENERÓ
+if st.session_state["pdf_data"]:
+    st.markdown("---")
+    st.download_button(
+        label="📥 DESCARGAR PDF PARA IMPRIMIR",
+        data=st.session_state["pdf_data"],
+        file_name=f"Reporte_{orden}.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
+    if st.button("🔄 HACER NUEVO REPORTE"):
+        reiniciar_formulario()
+        st.rerun()
