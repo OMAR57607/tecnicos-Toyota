@@ -6,39 +6,32 @@ import os
 from datetime import datetime
 
 # ==========================================
-# 1. CONFIGURACIÓN (MODO TOUCH / MÓVIL)
+# 1. CONFIGURACIÓN (MODO TALLER)
 # ==========================================
 st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centered")
 
-# CSS: Botones gigantes y textos grandes para leer bajo el sol o con prisas
+# CSS: Letras grandes para facilitar lectura, pero SIN colores forzados
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Textos generales más grandes */
-    .stTextInput input, .stSelectbox div, .stNumberInput input { 
+    /* Aumentar tamaño de letra en inputs para dedos grandes/tablets */
+    .stTextInput input, .stSelectbox div, .stNumberInput input, .stTextArea textarea { 
         font-size: 18px !important; 
-        min-height: 50px !important; 
+        min-height: 50px !important;
     }
     
-    /* ÁREA DE DICTADO (IMPORTANTE PARA VOZ) */
-    .stTextArea textarea {
-        font-size: 20px !important; /* Letra grande para ver lo que se dicta */
-        line-height: 1.5 !important;
-        background-color: #ffffeba3; /* Color sutil para destacar donde escribir/hablar */
-    }
-    
-    /* Área de carga de fotos */
+    /* Área de carga de fotos más visible */
     [data-testid="stFileUploader"] {
         padding: 15px; 
         border: 2px dashed #EB0A1E; 
         border-radius: 12px;
-        background-color: #fff0f0; 
         text-align: center;
+        background-color: transparent; /* Respetar tema del usuario */
     }
     
-    /* Botón de envío */
+    /* Botón de envío gigante */
     div.stButton > button {
         height: 65px !important;
         font-size: 22px !important;
@@ -47,6 +40,9 @@ st.markdown("""
         text-transform: uppercase;
         box-shadow: 0 4px 6px rgba(0,0,0,0.2);
     }
+    
+    /* Espaciado para que no se vea amontonado */
+    .block-container { padding-top: 2rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -69,7 +65,7 @@ def init_supabase_blindado():
         except: pass
 
     if not url or not key:
-        st.error("❌ Error de Conexión: Faltan credenciales.")
+        st.error("❌ Error: Faltan credenciales de Supabase.")
         return None
 
     return create_client(url.replace("'", "").strip(), key.replace("'", "").strip())
@@ -84,7 +80,7 @@ if "form_key" not in st.session_state:
     st.session_state["form_key"] = str(uuid.uuid4())
 
 def reiniciar_formulario():
-    # Cambiamos la key para limpiar los inputs del auto, pero NO el nombre del técnico
+    # Cambiamos la key para limpiar los inputs del auto
     st.session_state["form_key"] = str(uuid.uuid4())
 
 # ==========================================
@@ -99,11 +95,10 @@ with c2:
     st.markdown("### 🔧 Reporte Técnico")
 
 # --- ZONA 1: TÉCNICO (PERSISTENTE) ---
-# Este campo NO cambia al reiniciar el formulario. El técnico lo pone una vez en la mañana.
 tecnico = st.text_input("👷 NOMBRE DEL TÉCNICO", placeholder="Tu nombre aquí...", key="tecnico_persistente")
 
 if not tecnico:
-    st.warning("👆 Para empezar, escribe tu nombre arriba.")
+    st.warning("👆 Escribe tu nombre para empezar.")
     st.stop() 
 
 st.divider()
@@ -112,7 +107,7 @@ st.divider()
 key_act = st.session_state["form_key"]
 
 # --- ZONA 2: IDENTIFICACIÓN DEL AUTO (OBLIGATORIO) ---
-st.markdown("##### 🚗 Identificación del Vehículo")
+st.markdown("##### 🚗 Datos del Vehículo")
 col_a, col_b, col_c = st.columns([1.5, 1.5, 1])
 
 with col_a:
@@ -125,65 +120,73 @@ with col_b:
 with col_c:
     anio = st.number_input("AÑO", min_value=1990, max_value=2030, value=2024, step=1, key=f"yr_{key_act}")
 
-# --- ZONA 3: DICTADO DE FALLAS (OBLIGATORIO Y GRANDE) ---
+# --- ZONA 3: LISTADO DE REFACCIONES (OBLIGATORIO) ---
 st.markdown("---")
-st.markdown("##### 🎤 ¿Qué necesita el auto? (Dictar o Escribir)")
-st.caption("Menciona fallas y refacciones requeridas.")
+st.markdown("##### 🛠️ Listado de Refacciones / Fallas")
+st.caption("Usa el micrófono del teclado para dictar el listado.")
 
-# Text Area grande para facilitar el uso del micrófono del teclado
 fallas = st.text_area(
-    "Descripción", 
+    "Listado de Refacciones", 
     height=150, 
-    placeholder="Presiona el micrófono en tu teclado y dicta: \n'Servicio de 20 mil kilometros, balatas delanteras y plumillas...'", 
+    placeholder="Ej: \n- Balatas delanteras\n- Amortiguador derecho\n- Servicio 20k", 
     key=f"fail_{key_act}",
     label_visibility="collapsed"
 )
 
-# --- ZONA 4: EVIDENCIA (OBLIGATORIO) ---
-st.markdown("##### 📸 Evidencia Fotográfica")
+# --- ZONA 4: COMENTARIOS ADICIONALES (OPCIONAL/EXTRA) ---
+# Aquí va el campo que faltaba en tu tabla
+st.markdown("##### 📝 Comentarios Adicionales (Opcional)")
+comentarios = st.text_area(
+    "Observaciones extra", 
+    height=80, 
+    placeholder="Ej: Cliente espera en sala, urge cotización...", 
+    key=f"com_{key_act}",
+    label_visibility="collapsed"
+)
+
+# --- ZONA 5: EVIDENCIA (OBLIGATORIO) ---
+st.markdown("##### 📸 Fotos Evidencia")
 img_files = st.file_uploader(
-    "Toca para tomar fotos o subir", 
+    "Toca aquí para tomar fotos", 
     accept_multiple_files=True, 
     type=['png', 'jpg', 'jpeg'],
     label_visibility="collapsed",
     key=f"upl_{key_act}"
 )
 
-st.write(" ") # Espacio
+st.write(" ") 
 
-# --- ZONA 5: BOTÓN DE ACCIÓN CON VALIDACIÓN ---
-# Validamos que TODO esté lleno antes de mostrar el botón habilitado visualmente
+# --- ZONA 6: BOTÓN DE ACCIÓN ---
+# Validación: Orden, Auto, Año, Fallas y Fotos son OBLIGATORIOS. Comentarios es opcional.
 datos_completos = orden and auto and anio and fallas and img_files and tecnico
 
 if datos_completos:
     if st.button(f"🚀 ENVIAR REPORTE ({len(img_files)} FOTOS)", type="primary", use_container_width=True):
         try:
             uploaded_urls = []
-            barra = st.progress(0, text="Subiendo fotos...")
+            barra = st.progress(0, text="Subiendo evidencia...")
             
-            # 1. Subir imágenes a Storage
+            # 1. Subir imágenes
             for i, img in enumerate(img_files):
                 ext = img.name.split('.')[-1]
-                # Nombre único: ORDEN_TECNICO_ID.jpg
                 filename = f"{orden}_{tecnico.split()[0]}_{uuid.uuid4().hex[:4]}.{ext}"
                 bucket = "evidencias-taller"
                 
                 supabase.storage.from_(bucket).upload(filename, img.getvalue(), {"content-type": img.type})
-                
-                # Obtener URL
                 res = supabase.storage.from_(bucket).get_public_url(filename)
                 final_url = res if isinstance(res, str) else res.public_url
                 uploaded_urls.append(final_url)
                 
                 barra.progress(int(((i + 1) / len(img_files)) * 100))
 
-            # 2. Insertar Datos en Tabla (Usando columna 'tecnico')
+            # 2. Insertar Datos en Tabla (Mapeo exacto a tu imagen)
             datos = {
                 "orden_placas": orden.upper().strip(),
                 "tecnico": tecnico.upper().strip(), 
                 "auto_modelo": auto.upper(),
                 "anio": int(anio),
-                "fallas_refacciones": fallas.upper(), # Guardamos en mayúsculas
+                "fallas_refacciones": fallas.upper(), 
+                "comentarios": comentarios.upper() if comentarios else "", # Nuevo campo
                 "evidencia_fotos": uploaded_urls,
                 "estado": "Pendiente",
                 "created_at": datetime.utcnow().isoformat()
@@ -192,17 +195,15 @@ if datos_completos:
             supabase.table("evidencias_taller").insert(datos).execute()
             
             barra.empty()
-            st.balloons() # Feedback visual gratificante
-            st.success(f"✅ Reporte de {auto} enviado correctamente.")
-            time.sleep(2)
+            st.success(f"✅ Reporte enviado correctamente.")
+            time.sleep(1.5)
             
-            reiniciar_formulario() # Limpia todo menos el técnico
+            reiniciar_formulario() 
             st.rerun()
             
         except Exception as e:
-            st.error(f"Ocurrió un error al subir: {e}")
+            st.error(f"Error al enviar: {e}")
 
 else:
-    # Botón deshabilitado o mensaje de advertencia visual
-    st.warning("⚠️ Para enviar, completa: Orden, Fotos y Descripción de Fallas.")
-    st.button("🛑 FALTAN DATOS OBLIGATORIOS", disabled=True, use_container_width=True)
+    st.warning("⚠️ Completa: Orden, Fallas y Fotos para enviar.")
+    st.button("🛑 DATOS INCOMPLETOS", disabled=True, use_container_width=True)
