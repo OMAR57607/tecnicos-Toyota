@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centered")
 
-# CSS: Letras grandes para facilitar lectura, pero SIN colores forzados
+# CSS: Letras grandes para facilitar lectura, SIN colores forzados
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -22,27 +22,26 @@ st.markdown("""
         min-height: 50px !important;
     }
     
-    /* Área de carga de fotos más visible */
+    /* Área de carga de fotos más visible y limpia */
     [data-testid="stFileUploader"] {
         padding: 15px; 
         border: 2px dashed #EB0A1E; 
         border-radius: 12px;
         text-align: center;
-        background-color: transparent; /* Respetar tema del usuario */
     }
     
-    /* Botón de envío gigante */
+    /* Estilos de Botones Personalizados */
     div.stButton > button {
         height: 65px !important;
-        font-size: 22px !important;
-        font-weight: 900 !important;
+        font-size: 20px !important;
+        font-weight: 800 !important;
         border-radius: 10px !important;
         text-transform: uppercase;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     
-    /* Espaciado para que no se vea amontonado */
-    .block-container { padding-top: 2rem; }
+    /* Espaciado superior */
+    .block-container { padding-top: 1rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -133,8 +132,7 @@ fallas = st.text_area(
     label_visibility="collapsed"
 )
 
-# --- ZONA 4: COMENTARIOS ADICIONALES (OPCIONAL/EXTRA) ---
-# Aquí va el campo que faltaba en tu tabla
+# --- ZONA 4: COMENTARIOS ADICIONALES (OPCIONAL) ---
 st.markdown("##### 📝 Comentarios Adicionales (Opcional)")
 comentarios = st.text_area(
     "Observaciones extra", 
@@ -154,56 +152,68 @@ img_files = st.file_uploader(
     key=f"upl_{key_act}"
 )
 
-st.write(" ") 
+st.markdown("---")
 
-# --- ZONA 6: BOTÓN DE ACCIÓN ---
-# Validación: Orden, Auto, Año, Fallas y Fotos son OBLIGATORIOS. Comentarios es opcional.
+# --- ZONA 6: BOTONES DE ACCIÓN (UX MEJORADA) ---
+# Validación: Orden, Auto, Año, Fallas y Fotos son OBLIGATORIOS.
 datos_completos = orden and auto and anio and fallas and img_files and tecnico
 
-if datos_completos:
-    if st.button(f"🚀 ENVIAR REPORTE ({len(img_files)} FOTOS)", type="primary", use_container_width=True):
-        try:
-            uploaded_urls = []
-            barra = st.progress(0, text="Subiendo evidencia...")
-            
-            # 1. Subir imágenes
-            for i, img in enumerate(img_files):
-                ext = img.name.split('.')[-1]
-                filename = f"{orden}_{tecnico.split()[0]}_{uuid.uuid4().hex[:4]}.{ext}"
-                bucket = "evidencias-taller"
-                
-                supabase.storage.from_(bucket).upload(filename, img.getvalue(), {"content-type": img.type})
-                res = supabase.storage.from_(bucket).get_public_url(filename)
-                final_url = res if isinstance(res, str) else res.public_url
-                uploaded_urls.append(final_url)
-                
-                barra.progress(int(((i + 1) / len(img_files)) * 100))
+# Usamos columnas para separar "Limpiar" de "Enviar"
+# Columna izquierda (1/3) para Limpiar
+# Columna derecha (2/3) para Enviar (Más grande porque es la acción principal)
+c_reset, c_send = st.columns([1, 2], gap="small")
 
-            # 2. Insertar Datos en Tabla (Mapeo exacto a tu imagen)
-            datos = {
-                "orden_placas": orden.upper().strip(),
-                "tecnico": tecnico.upper().strip(), 
-                "auto_modelo": auto.upper(),
-                "anio": int(anio),
-                "fallas_refacciones": fallas.upper(), 
-                "comentarios": comentarios.upper() if comentarios else "", # Nuevo campo
-                "evidencia_fotos": uploaded_urls,
-                "estado": "Pendiente",
-                "created_at": datetime.utcnow().isoformat()
-            }
-            
-            supabase.table("evidencias_taller").insert(datos).execute()
-            
-            barra.empty()
-            st.success(f"✅ Reporte enviado correctamente.")
-            time.sleep(1.5)
-            
-            reiniciar_formulario() 
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error al enviar: {e}")
+with c_reset:
+    # Botón Secundario: Permite borrar todo si se equivocó de orden
+    if st.button("🗑️ LIMPIAR", type="secondary", use_container_width=True):
+        reiniciar_formulario()
+        st.rerun()
 
-else:
-    st.warning("⚠️ Completa: Orden, Fallas y Fotos para enviar.")
-    st.button("🛑 DATOS INCOMPLETOS", disabled=True, use_container_width=True)
+with c_send:
+    # Botón Primario: Solo activo si hay datos
+    if datos_completos:
+        if st.button(f"🚀 ENVIAR ({len(img_files)})", type="primary", use_container_width=True):
+            try:
+                uploaded_urls = []
+                barra = st.progress(0, text="Subiendo evidencia...")
+                
+                # 1. Subir imágenes
+                for i, img in enumerate(img_files):
+                    ext = img.name.split('.')[-1]
+                    filename = f"{orden}_{tecnico.split()[0]}_{uuid.uuid4().hex[:4]}.{ext}"
+                    bucket = "evidencias-taller"
+                    
+                    supabase.storage.from_(bucket).upload(filename, img.getvalue(), {"content-type": img.type})
+                    res = supabase.storage.from_(bucket).get_public_url(filename)
+                    final_url = res if isinstance(res, str) else res.public_url
+                    uploaded_urls.append(final_url)
+                    
+                    barra.progress(int(((i + 1) / len(img_files)) * 100))
+
+                # 2. Insertar Datos
+                datos = {
+                    "orden_placas": orden.upper().strip(),
+                    "tecnico": tecnico.upper().strip(), 
+                    "auto_modelo": auto.upper(),
+                    "anio": int(anio),
+                    "fallas_refacciones": fallas.upper(), 
+                    "comentarios": comentarios.upper() if comentarios else "",
+                    "evidencia_fotos": uploaded_urls,
+                    "estado": "Pendiente",
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                
+                supabase.table("evidencias_taller").insert(datos).execute()
+                
+                barra.empty()
+                st.success(f"✅ Reporte enviado correctamente.")
+                time.sleep(1.5)
+                
+                reiniciar_formulario() 
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error al enviar: {e}")
+    else:
+        # Feedback visual si falta info
+        st.button("🛑 FALTA INFORMACIÓN", disabled=True, use_container_width=True)
