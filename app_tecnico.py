@@ -3,182 +3,181 @@ from supabase import create_client
 import uuid
 import time
 import os
+from datetime import datetime
 
 # ==========================================
-# 1. CONFIGURACIÓN (SIEMPRE VA PRIMERO)
+# 1. CONFIGURACIÓN E INICIALIZACIÓN
 # ==========================================
-st.set_page_config(page_title="Recepción Toyota", page_icon="🚗", layout="centered")
+st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centered")
 
-# CSS Ajustado
+# CSS para Móviles (Botones grandes y inputs legibles)
 st.markdown("""
     <style>
+    /* Ocultar elementos innecesarios */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    .stTextInput input, .stTextArea textarea { font-size: 16px !important; }
-    [data-testid="stFileUploader"] {
-        padding: 10px; border: 2px dashed #EB0A1E; border-radius: 10px;
-        background-color: #f9f9f9; text-align: center;
+    
+    /* Inputs más grandes para dedos en tablets */
+    .stTextInput input, .stSelectbox div, .stNumberInput input { 
+        font-size: 18px !important; 
+        min-height: 50px !important; 
     }
-    @media (prefers-color-scheme: dark) {
-        [data-testid="stFileUploader"] { background-color: #262730; }
+    
+    /* Área de carga de archivos destacada */
+    [data-testid="stFileUploader"] {
+        padding: 20px; 
+        border: 2px dashed #EB0A1E; 
+        border-radius: 12px;
+        background-color: #fff0f0; 
+        text-align: center;
+    }
+    
+    /* Botón de envío gigante */
+    div.stButton > button {
+        height: 60px !important;
+        font-size: 20px !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXIÓN BLINDADA (SOLO UNA Y CON CACHÉ)
+# 2. CONEXIÓN SUPABASE
 # ==========================================
 @st.cache_resource(ttl="2h")
 def init_supabase_blindado():
-    # 1. Intenta leer variables de entorno (Railway / Docker)
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
-
-    # 2. Si no las encuentra, busca en st.secrets (Local / Streamlit Cloud)
+    
     if not url or not key:
         try:
-            # Opción A: Estructura anidada [supabase]
             if "supabase" in st.secrets:
                 url = st.secrets["supabase"]["url"]
                 key = st.secrets["supabase"]["key"]
-            # Opción B: Estructura plana
             else:
                 url = st.secrets.get("SUPABASE_URL")
                 key = st.secrets.get("SUPABASE_KEY")
-        except Exception:
-            pass
+        except: pass
 
-    # 3. Validación final
     if not url or not key:
-        st.error("❌ ERROR CRÍTICO: No se detectaron las credenciales (SUPABASE_URL / SUPABASE_KEY). Configura las Variables en Railway.")
+        st.error("❌ Falta configuración de Supabase.")
         return None
 
-    # Limpieza de strings
-    url_clean = url.replace("'", "").replace('"', "").strip()
-    key_clean = key.replace("'", "").replace('"', "").strip()
+    return create_client(url.replace("'", "").strip(), key.replace("'", "").strip())
 
-    try:
-        return create_client(url_clean, key_clean)
-    except Exception as e:
-        st.error(f"Error al conectar con Supabase: {e}")
-        return None
-
-# Iniciamos la conexión ÚNICA
 supabase = init_supabase_blindado()
-
-# Si falla la conexión, detenemos la app aquí para no causar más errores
-if not supabase:
-    st.stop()
+if not supabase: st.stop()
 
 # ==========================================
-# 3. LÓGICA DE ESTADO (Anti-Desconexión)
+# 3. GESTIÓN DE ESTADO (PERSISTENCIA)
 # ==========================================
+# Usamos esto para limpiar el formulario PERO mantener al técnico
+if "form_key" not in st.session_state:
+    st.session_state["form_key"] = str(uuid.uuid4())
 
-if "form_iter" not in st.session_state:
-    st.session_state["form_iter"] = 0
-
-def limpiar_formulario():
-    st.session_state["form_iter"] += 1
-
-# Atajo para la versión actual
-v = st.session_state["form_iter"]
+def reiniciar_formulario():
+    # Generamos nueva key para limpiar inputs, EXCEPTO el técnico que va aparte
+    st.session_state["form_key"] = str(uuid.uuid4())
 
 # ==========================================
-# 4. INTERFAZ GRÁFICA
+# 4. INTERFAZ TÉCNICO (SIMPLIFICADA)
 # ==========================================
 
-col_logo, col_titulo = st.columns([1, 3])
-with col_logo:
-    if os.path.exists("logo.png"): 
-        st.image("logo.png", use_container_width=True)
-with col_titulo:
-    st.markdown("## 🛠️ Reporte Técnico")
+# Encabezado compacto
+c1, c2 = st.columns([1, 4])
+with c1:
+    if os.path.exists("logo.png"): st.image("logo.png")
+with c2:
+    st.markdown("### 🔧 Reporte de Bahía")
 
-st.markdown("---")
+# --- ZONA 1: ¿QUIÉN ERES? (PERSISTENTE) ---
+# Este campo NO usa la key dinámica, por eso no se borra al enviar
+tecnico = st.text_input("👷 NOMBRE DEL TÉCNICO", placeholder="Ej. Juan Pérez", key="tecnico_persistente")
 
-# --- SECCIÓN 1: DATOS ---
-st.subheader("📋 Datos del Vehículo")
+if not tecnico:
+    st.info("👆 Ingresa tu nombre para comenzar.")
+    st.stop() # Detiene la app hasta que pongan nombre
 
-orden = st.text_input("ORDEN / PLACAS", placeholder="Obligatorio", key=f"orden_input_{v}")
+st.divider()
 
-col1, col2, col3 = st.columns([2, 1.5, 1])
-with col1:
-    vin = st.text_input("VIN (17 Dígitos)", max_chars=17, key=f"vin_input_{v}")
-with col2:
-    auto = st.text_input("AUTO", placeholder="Ej. Hilux", key=f"auto_input_{v}")
-with col3:
-    anio = st.text_input("AÑO", placeholder="2024", key=f"anio_input_{v}")
+# --- ZONA 2: EL VEHÍCULO (SE LIMPIA CADA VEZ) ---
+key_act = st.session_state["form_key"]
 
-# --- SECCIÓN 2: DIAGNÓSTICO ---
-col_fallas, col_comentarios = st.columns(2)
-with col_fallas:
-    fallas = st.text_area("FALLAS / REFACCIONES", height=120, key=f"fallas_input_{v}")
-with col_comentarios:
-    comentarios = st.text_area("COMENTARIOS", height=120, key=f"comentarios_input_{v}")
+col_a, col_b = st.columns([1.5, 1])
+with col_a:
+    orden = st.text_input("📋 ORDEN / PLACAS", placeholder="Núm. Orden", key=f"ord_{key_act}")
 
-# --- SECCIÓN 3: FOTOS ---
+with col_b:
+    # Lista rápida para no escribir
+    modelos_toyota = ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Raize", "Otro"]
+    auto = st.selectbox("🚗 MODELO", modelos_toyota, key=f"mod_{key_act}")
+
+# --- ZONA 3: EVIDENCIA ---
+st.markdown("##### 📸 Evidencia (Fallas y Piezas)")
 img_files = st.file_uploader(
-    "ADJUNTAR FOTOS", 
+    "Subir Fotos", 
     accept_multiple_files=True, 
-    type=['png', 'jpg', 'jpeg', 'webp'],
+    type=['png', 'jpg', 'jpeg'],
     label_visibility="collapsed",
-    key=f"uploader_{v}"
+    key=f"upl_{key_act}"
 )
 
-# --- BOTÓN DE ENVÍO ---
-if img_files:
-    st.write(" ")
-    if st.button(f"📤 ENVIAR REPORTE ({len(img_files)})", type="primary", use_container_width=True):
+# --- ZONA 4: DETALLES (PLEGABLE PARA NO ESTORBAR) ---
+with st.expander("📝 Agregar detalles o comentarios (Opcional)"):
+    fallas = st.text_area("Descripción de Fallas / Piezas", height=100, placeholder="¿Qué piezas necesitamos?", key=f"fail_{key_act}")
+    anio = st.number_input("Año del Auto", min_value=1990, max_value=2030, value=2024, step=1, key=f"yr_{key_act}")
+
+# --- BOTÓN DE ACCIÓN ---
+if img_files and orden:
+    if st.button(f"🚀 ENVIAR REPORTE ({len(img_files)} FOTOS)", type="primary", use_container_width=True):
         
-        # Validaciones
-        errores = []
-        if not orden: errores.append("Falta Orden")
-        if not vin: errores.append("Falta VIN")
-        if not auto: errores.append("Falta Auto")
-        if not anio: errores.append("Falta Año")
-        
-        if errores:
-            for err in errores: st.error(f"⚠️ {err}")
-        else:
-            try:
-                uploaded_urls = []
-                my_bar = st.progress(0, text="Subiendo...")
-
-                # 1. Subir Fotos
-                for i, img in enumerate(img_files):
-                    file_bytes = img.getvalue()
-                    ext = img.name.split('.')[-1]
-                    clean_orden = orden.strip().replace(" ", "_")
-                    filename = f"{clean_orden}_{vin[-4:]}_{uuid.uuid4().hex[:6]}.{ext}"
-                    
-                    supabase.storage.from_("evidencias-taller").upload(
-                        filename, file_bytes, {"content-type": img.type}
-                    )
-                    
-                    res = supabase.storage.from_("evidencias-taller").get_public_url(filename)
-                    final_url = res.public_url if hasattr(res, 'public_url') else res
-                    uploaded_urls.append(final_url)
-                    my_bar.progress(int(((i + 1) / len(img_files)) * 100))
-
-                # 2. Insertar Datos
-                datos = {
-                    "orden_placas": orden.upper().strip(),
-                    "vin": vin.upper().strip(),
-                    "auto_modelo": auto.upper().strip(),
-                    "anio": int(anio) if anio.isdigit() else 0,
-                    "fallas_refacciones": fallas.upper(),
-                    "comentarios": comentarios.upper(),
-                    "evidencia_fotos": uploaded_urls
-                }
+        try:
+            uploaded_urls = []
+            barra = st.progress(0, text="Subiendo evidencia...")
+            
+            # 1. Subir imágenes
+            for i, img in enumerate(img_files):
+                ext = img.name.split('.')[-1]
+                # Nombre de archivo: ORDEN_TECNICO_RANDOM.jpg
+                filename = f"{orden}_{tecnico.split()[0]}_{uuid.uuid4().hex[:4]}.{ext}"
                 
-                supabase.table("evidencias_taller").insert(datos).execute()
-
-                my_bar.progress(100, text="✅ Enviado correctamente")
-                time.sleep(1)
+                bucket = "evidencias-taller"
+                supabase.storage.from_(bucket).upload(filename, img.getvalue(), {"content-type": img.type})
                 
-                # 3. LIMPIEZA SEGURA
-                limpiar_formulario() 
-                st.rerun() 
+                # Obtener URL pública
+                res = supabase.storage.from_(bucket).get_public_url(filename)
+                # Compatibilidad versiones supabase
+                final_url = res if isinstance(res, str) else res.public_url
+                uploaded_urls.append(final_url)
+                
+                barra.progress(int(((i + 1) / len(img_files)) * 100))
 
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+            # 2. Guardar en Base de Datos (Sin VIN, Con Técnico)
+            datos = {
+                "orden_placas": orden.upper().strip(),
+                "tecnico": tecnico.upper().strip(),  # <--- CAMBIO AQUÍ
+                "auto_modelo": auto.upper(),
+                "anio": int(anio),
+                "fallas_refacciones": fallas.upper() if fallas else "REVISIÓN GENERAL",
+                "evidencia_fotos": uploaded_urls,
+                "estado": "Pendiente",
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            # NOTA: Asegúrate de que la tabla 'evidencias_taller' tenga la columna 'tecnico'
+            # y que la columna 'vin' no sea obligatoria (o elimínala de la BD).
+            supabase.table("evidencias_taller").insert(datos).execute()
+            
+            barra.empty()
+            st.success("✅ ¡Enviado! Listo para el siguiente auto.")
+            time.sleep(1.5)
+            
+            reiniciar_formulario()
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error al subir: {e}")
+
+elif img_files and not orden:
+    st.warning("⚠️ Falta el número de Orden o Placas.")
