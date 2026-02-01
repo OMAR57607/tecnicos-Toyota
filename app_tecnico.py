@@ -203,7 +203,8 @@ with tab1:
                         "evidencia_fotos": uploaded_urls,
                         "url_pdf": url_pdf_final,
                         "estado": "Pendiente",
-                        "created_at": datetime.utcnow().isoformat()
+                        # --- CORRECCIÓN 1: Enviar fecha limpia sin microsegundos ---
+                        "created_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                     }
                     supabase.table("evidencias_taller").insert(datos).execute()
                     
@@ -274,8 +275,21 @@ with tab2:
         if data:
             for item in data:
                 with st.container():
-                    # Formato de fecha
-                    fecha_obj = datetime.fromisoformat(item['created_at'])
+                    # --- CORRECCIÓN 2: Limpieza y Parseo seguro de fecha ---
+                    try:
+                        # Limpiar posibles espacios extraños en la base de datos
+                        fecha_raw = item['created_at']
+                        if isinstance(fecha_raw, str):
+                            # Truco para arreglar el error: '2026... .123' -> '2026...123'
+                            fecha_clean = fecha_raw.replace(" .", ".").replace(" :", ":").strip()
+                            fecha_obj = datetime.fromisoformat(fecha_clean)
+                        else:
+                            # Si ya viene como objeto datetime (poco probable en esta respuesta pero posible)
+                            fecha_obj = fecha_raw
+                    except Exception:
+                        # Si falla, usamos la fecha actual para que no explote la app
+                        fecha_obj = datetime.now()
+
                     fecha_str = fecha_obj.strftime('%d/%m/%Y')
                     hora_str = fecha_obj.strftime('%H:%M')
                     
