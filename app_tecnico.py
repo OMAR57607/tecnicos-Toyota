@@ -7,23 +7,28 @@ from datetime import datetime
 from fpdf import FPDF
 import concurrent.futures
 import tempfile
-import sentry_sdk
+
+# Intenta importar Sentry, si no está instalado (local), no rompe la app
+try:
+    import sentry_sdk
+except ImportError:
+    sentry_sdk = None
 
 # ==========================================
 # 1. CONFIGURACIÓN E INICIALIZACIÓN
 # ==========================================
 
 # A) Configuración de Sentry (Monitoreo de Errores)
-# Busca la variable SENTRY_DSN en las variables de entorno de Railway
+# Solo se activa si existe la variable de entorno SENTRY_DSN en Railway
 sentry_dsn = os.environ.get("SENTRY_DSN")
-if sentry_dsn:
+if sentry_sdk and sentry_dsn:
     sentry_sdk.init(
         dsn=sentry_dsn,
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
     )
 
-# B) Configuración de Página Streamlit
+# B) Configuración de Página
 st.set_page_config(
     page_title="Taller Toyota", 
     page_icon="🔧", 
@@ -31,7 +36,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# C) Estilos CSS (Toyota Red & Mobile First)
+# C) Estilos CSS (MEJORADOS PARA VISIBILIDAD)
 TOYOTA_RED = "#EB0A1E"
 
 st.markdown(f"""
@@ -56,7 +61,7 @@ st.markdown(f"""
         transition: all 0.3s ease;
     }}
     
-    /* === TARJETA HISTORIAL DISEÑO NUEVO === */
+    /* === TARJETA HISTORIAL (SOLUCIÓN VISUAL) === */
     .report-card {{
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -64,6 +69,7 @@ st.markdown(f"""
         margin-bottom: 16px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         overflow: hidden;
+        font-family: sans-serif;
     }}
     
     .card-header {{
@@ -76,20 +82,22 @@ st.markdown(f"""
     }}
     
     .card-plate {{
-        font-size: 1.3rem;
+        font-size: 1.4rem;
         font-weight: 800;
-        color: #333;
+        color: #222;
+        letter-spacing: 0.5px;
     }}
     
+    /* ESTA ES LA CLAVE PARA QUE SE VEA EL MODELO */
     .card-model {{
         background-color: {TOYOTA_RED};
-        color: white;
-        padding: 4px 12px;
+        color: white !important;
+        padding: 5px 14px;
         border-radius: 20px;
         font-weight: bold;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        box-shadow: 0 2px 4px rgba(235, 10, 30, 0.3);
     }}
 
     .card-body {{
@@ -99,12 +107,13 @@ st.markdown(f"""
     .info-row {{
         display: flex;
         align-items: center;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
         color: #555;
+        font-size: 1rem;
     }}
 
     .card-footer {{
-        padding: 10px 15px;
+        padding: 12px 15px;
         border-top: 1px dashed #eee;
         background-color: #fff;
         display: flex;
@@ -115,22 +124,21 @@ st.markdown(f"""
         color: {TOYOTA_RED};
         font-weight: bold;
         text-decoration: none;
-        display: flex;
-        align-items: center;
-        gap: 5px;
+        display: inline-block;
         border: 1px solid {TOYOTA_RED};
-        padding: 5px 10px;
+        padding: 8px 16px;
         border-radius: 6px;
+        background-color: #fff;
+        transition: background 0.2s;
     }}
     .pdf-link:hover {{
-        background-color: {TOYOTA_RED};
-        color: white;
+        background-color: #FFF0F0;
     }}
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXIÓN SUPABASE (Railway Compatible)
+# 2. CONEXIÓN SUPABASE
 # ==========================================
 @st.cache_resource
 def init_supabase():
@@ -154,7 +162,7 @@ def init_supabase():
 supabase = init_supabase()
 
 # ==========================================
-# 3. CLASES Y FUNCIONES AUXILIARES
+# 3. FUNCIONES (PDF & UPLOAD)
 # ==========================================
 
 class PDFReport(FPDF):
@@ -174,23 +182,20 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf = PDFReport()
     pdf.add_page()
     
-    # --- DATOS GENERALES ---
+    # DATOS
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 10)
     pdf.set_text_color(0)
-    # Celda gris con info clave
     header_text = f" ORDEN: {datos['orden']}  |  FECHA: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     pdf.cell(0, 8, header_text, 1, 1, 'L', fill=True)
-    
     pdf.ln(5)
     
-    # Info en dos columnas simuladas
     pdf.set_font("Arial", '', 11)
     pdf.cell(95, 7, f"Técnico: {datos['tecnico']}", 0)
     pdf.cell(95, 7, f"Vehículo: {datos['modelo']} ({datos['anio']})", 0, 1)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     
-    # --- FALLAS Y DIAGNÓSTICO ---
+    # FALLAS
     pdf.ln(8)
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(235, 10, 30)
@@ -206,7 +211,7 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, datos['comentarios'])
 
-    # --- EVIDENCIA FOTOGRÁFICA ---
+    # FOTOS
     if imagenes_bytes:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 12)
@@ -217,58 +222,51 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
         x, y = x_start, y_start
         
         for i, img_data in enumerate(imagenes_bytes):
-            # Guardar temporalmente
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 tmp.write(img_data)
                 tmp_path = tmp.name
             
-            # Grid lógica: 2 fotos por fila
             if i > 0 and i % 2 == 0:
-                y += 90 # Salto de fila
+                y += 90
                 x = x_start
-                # Si bajamos mucho, nueva página
                 if y > 220:
                     pdf.add_page()
                     y = 30
             
             try:
-                # Insertar imagen (ajustar ancho a 90mm)
                 pdf.image(tmp_path, x=x, y=y, w=90, h=60)
-                # Marco alrededor de la foto
                 pdf.rect(x, y, 90, 60)
-                x += 95 # Mover a la derecha para la siguiente foto
-            except Exception as e:
-                print(f"Error imagen PDF: {e}")
+                x += 95
+            except Exception:
+                pass
             finally:
-                os.unlink(tmp_path) # Limpieza obligatoria
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
     return pdf.output(dest='S').encode('latin-1')
 
 def subir_imagen_worker(archivo, prefijo):
-    """Sube una imagen a Supabase Storage y retorna la URL pública."""
     try:
         ext = archivo.name.split('.')[-1]
         filename = f"{prefijo}_{uuid.uuid4().hex[:6]}.{ext}"
-        bucket = "evidencias-taller" # Asegúrate que este bucket exista y sea público en Supabase
+        bucket = "evidencias-taller"
         
         supabase.storage.from_(bucket).upload(filename, archivo.getvalue(), {"content-type": archivo.type})
         return supabase.storage.from_(bucket).get_public_url(filename)
     except Exception as e:
-        print(f"Error subida: {e}")
+        if sentry_sdk: sentry_sdk.capture_exception(e)
         return None
 
 # ==========================================
-# 4. INTERFAZ DE USUARIO
+# 4. INTERFAZ
 # ==========================================
 
 st.title("Sistema Taller")
-st.caption("Gestión de Reportes y Evidencias")
 
 tab_nuevo, tab_historial = st.tabs(["📝 NUEVA ORDEN", "📂 HISTORIAL"])
 
-# --- PESTAÑA 1: NUEVO REPORTE ---
+# --- TAB 1: FORMULARIO ---
 with tab_nuevo:
-    # Token para reiniciar formulario sin recargar página completa
     if "form_id" not in st.session_state: st.session_state.form_id = str(uuid.uuid4())
     
     with st.container():
@@ -293,30 +291,26 @@ with tab_nuevo:
             status = st.status("⚙️ Procesando...", expanded=True)
             
             try:
-                # 1. Subir fotos en paralelo (Multithreading)
                 urls_fotos = []
                 img_bytes = [f.getvalue() for f in fotos] if fotos else []
                 
                 if fotos:
-                    status.write("📸 Subiendo imágenes a la nube...")
+                    status.write("📸 Subiendo imágenes...")
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         futures = [executor.submit(subir_imagen_worker, f, f"{orden}_{tecnico}") for f in fotos]
                         for future in concurrent.futures.as_completed(futures):
                             url = future.result()
                             if url: urls_fotos.append(url)
                 
-                # 2. Generar PDF
-                status.write("📄 Creando documento PDF...")
+                status.write("📄 Creando PDF...")
                 datos_pdf = {"orden": orden.upper(), "tecnico": tecnico.upper(), "modelo": modelo, "anio": anio, "fallas": fallas, "comentarios": comentarios}
                 pdf_bytes = generar_pdf_avanzado(datos_pdf, img_bytes)
                 
-                # 3. Subir PDF
                 pdf_name = f"Reporte_{orden}_{uuid.uuid4().hex[:4]}.pdf"
                 supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_bytes, {"content-type": "application/pdf"})
                 url_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
                 
-                # 4. Insertar en DB
-                status.write("💾 Guardando registro...")
+                status.write("💾 Guardando...")
                 payload = {
                     "orden_placas": orden.upper(),
                     "tecnico": tecnico.upper(),
@@ -331,13 +325,11 @@ with tab_nuevo:
                 }
                 supabase.table("evidencias_taller").insert(payload).execute()
                 
-                status.update(label="✅ ¡Enviado con éxito!", state="complete", expanded=False)
+                status.update(label="✅ ¡Listo!", state="complete", expanded=False)
                 st.balloons()
                 
-                # Botón de descarga inmediata
-                st.download_button("📥 Descargar PDF Generado", pdf_bytes, file_name=pdf_name, mime="application/pdf", use_container_width=True)
+                st.download_button("📥 Descargar PDF", pdf_bytes, file_name=pdf_name, mime="application/pdf", use_container_width=True)
                 
-                # Botón para limpiar
                 if st.button("Nuevo Formulario"):
                     st.session_state.form_id = str(uuid.uuid4())
                     st.rerun()
@@ -345,31 +337,29 @@ with tab_nuevo:
             except Exception as e:
                 status.update(label="❌ Error", state="error")
                 st.error(f"Error: {e}")
-                # Enviar error a Sentry manualmente si es crítico
-                sentry_sdk.capture_exception(e)
+                if sentry_sdk: sentry_sdk.capture_exception(e)
 
-# --- PESTAÑA 2: HISTORIAL Y BÚSQUEDA ---
+# --- TAB 2: HISTORIAL (CON PAGINACIÓN) ---
 with tab_historial:
-    # Estado de paginación
     if "page" not in st.session_state: st.session_state.page = 0
     ITEMS_PER_PAGE = 5
     
-    # Barra de búsqueda
     col_s, col_r = st.columns([4, 1])
-    query_txt = col_s.text_input("Buscador", placeholder="Buscar por placa, modelo...", label_visibility="collapsed")
+    query_txt = col_s.text_input("Buscador", placeholder="Placa o modelo...", label_visibility="collapsed")
     
     if col_r.button("✖️"):
         st.session_state.page = 0
+        query_txt = "" # Visual cleanup requires rerun
         st.rerun()
 
-    # Construcción de Query
+    # Query lógica
     start = st.session_state.page * ITEMS_PER_PAGE
     end = start + ITEMS_PER_PAGE - 1
     
     query = supabase.table("evidencias_taller").select("*", count="exact").order("created_at", desc=True)
     
     if query_txt:
-        # Búsqueda (ignora paginación estándar, trae Top 20)
+        # Búsqueda global (sin paginación estricta)
         filtro = f"orden_placas.ilike.%{query_txt}%,tecnico.ilike.%{query_txt}%,auto_modelo.ilike.%{query_txt}%"
         res = query.or_(filtro).limit(20).execute()
         data = res.data
@@ -379,25 +369,23 @@ with tab_historial:
         # Paginación normal
         res = query.range(start, end).execute()
         data = res.data
-        total_rows = res.count
+        total_rows = res.count if res.count else 0
         is_search = False
 
-    # Renderizado
     if not data:
-        st.info("No se encontraron registros.")
+        st.info("No hay registros.")
     else:
         if not is_search:
             st.caption(f"Mostrando {start + 1}-{min(end + 1, total_rows)} de {total_rows}")
             
         for item in data:
-            # Formato fecha seguro
             try:
                 dt = datetime.fromisoformat(item['created_at'])
                 fecha_str = dt.strftime("%d %b - %H:%M")
             except: 
                 fecha_str = "--/--"
 
-            # TARJETA HTML OPTIMIZADA
+            # TARJETA REDISEÑADA
             st.markdown(f"""
                 <div class="report-card">
                     <div class="card-header">
@@ -406,10 +394,10 @@ with tab_historial:
                     </div>
                     <div class="card-body">
                         <div class="info-row">
-                            👤 <b>Téc:</b>&nbsp;{item['tecnico']}
+                            👤 <b style="margin-left:5px;">{item['tecnico']}</b>
                         </div>
                         <div class="info-row">
-                            📅 {fecha_str}
+                            📅 <span style="margin-left:5px;">{fecha_str}</span>
                         </div>
                     </div>
                     <div class="card-footer">
@@ -420,7 +408,7 @@ with tab_historial:
                 </div>
             """, unsafe_allow_html=True)
             
-        # Controles de Paginación
+        # Botones Anterior/Siguiente
         if not is_search and total_rows > ITEMS_PER_PAGE:
             c_prev, c_info, c_next = st.columns([1, 2, 1])
             with c_prev:
