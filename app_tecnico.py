@@ -252,11 +252,26 @@ with tab_nuevo:
         st.markdown("##### ⚠️ Recomendaciones Técnicas")
         recomendaciones = st.text_area("Observaciones importantes para el asesor/cliente", height=80, key=f"rec_{st.session_state.form_token}", placeholder="Ej: Balatas al 30%, se sugiere cambio próximo servicio...")
 
-        # BOTÓN DE ENVÍO
-        campos_llenos = orden and asesor and fallas and len(orden) > 2
+        # --- VALIDACIÓN TOTAL (NUEVO CÓDIGO) ---
+        # Solo será True si TODOS los campos tienen datos
+        campos_llenos = (
+            orden and 
+            len(orden) > 2 and 
+            asesor and 
+            fallas and 
+            fotos and            # <--- AHORA OBLIGATORIO: Debe haber fotos
+            recomendaciones      # <--- AHORA OBLIGATORIO: Debe haber recomendaciones
+        )
         
+        # Aviso visual para que sepan qué falta
+        if not campos_llenos:
+            st.warning("⚠️ Para enviar: Llena todos los datos, sube al menos una foto y escribe recomendaciones.")
+
+        # El botón se desbloquea solo si campos_llenos es True
         if st.button("🚀 ENVIAR A COTIZACIÓN", type="primary", use_container_width=True, disabled=not campos_llenos):
             status = st.status("⚙️ Procesando orden...", expanded=True)
+            
+                # ... (Aquí sigue el resto de tu código de envío: subir fotos, pdf, supabase...)
             try:
                 # A) Subir Fotos
                 urls_fotos = []
