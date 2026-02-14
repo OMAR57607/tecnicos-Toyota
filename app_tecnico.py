@@ -274,7 +274,7 @@ with tab_nuevo:
                     "evidencia_fotos": urls_fotos,
                     "url_pdf": url_pdf,
                     "created_at": datetime.now().isoformat(),
-                    "estado": "Finalizado"
+                    "estado": "Procesado"
                 }
                 supabase.table("evidencias_taller").insert(payload).execute()
                 
