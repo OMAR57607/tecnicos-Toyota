@@ -106,12 +106,7 @@ if not supabase: st.stop()
 # ==========================================
 class PDFReport(FPDF):
     def header(self):
-        # Intentar poner el logo en el PDF si existe
-        #if os.path.exists("logo.png"):
-            # x, y, w (ajusta según tu logo)
-            #self.image("logo.png", 10, 8, 25) 
-            #self.set_xy(40, 10) # Mover cursor a la derecha del logo
-        
+        # SIN LOGO EN PDF
         self.set_font('Arial', 'B', 15)
         self.set_text_color(235, 10, 30)
         self.cell(0, 10, 'REPORTE TÉCNICO TOYOTA', 0, 1, 'C')
@@ -121,7 +116,7 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf = PDFReport()
     pdf.add_page()
     
-    # --- DATOS GENERALES ---
+    # DATOS
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 10)
     pdf.set_text_color(0)
@@ -130,35 +125,31 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf.ln(4)
     
     pdf.set_font("Arial", '', 10)
-    # Fila 1: Técnico y Asesor
     pdf.cell(95, 8, f"Técnico: {datos['tecnico']}", 0)
-    pdf.cell(95, 8, f"Asesor: {datos['asesor']}", 0, 1) # Nuevo campo en PDF
+    pdf.cell(95, 8, f"Asesor: {datos['asesor']}", 0, 1) 
     
-    # Fila 2: Auto
     pdf.cell(0, 8, f"Vehículo: {datos['modelo']} ({datos['anio']})", 0, 1)
-    
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     
-    # --- SECCIÓN 1: REFACCIONES A COTIZAR ---
+    # SECCIONES
     pdf.ln(6)
     pdf.set_font("Arial", 'B', 12)
-    pdf.set_text_color(235, 10, 30) # Rojo
+    pdf.set_text_color(235, 10, 30)
     pdf.cell(0, 8, "REFACCIONES A COTIZAR / FALLAS", 0, 1)
-    pdf.set_text_color(0) # Negro
+    pdf.set_text_color(0)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 6, datos['fallas'])
     
-    # --- SECCIÓN 2: RECOMENDACIONES TÉCNICAS ---
     if datos['comentarios']:
         pdf.ln(6)
         pdf.set_font("Arial", 'B', 12)
-        pdf.set_text_color(235, 10, 30) # Rojo
+        pdf.set_text_color(235, 10, 30)
         pdf.cell(0, 8, "RECOMENDACIONES TÉCNICAS", 0, 1)
-        pdf.set_text_color(0) # Negro
+        pdf.set_text_color(0)
         pdf.set_font("Arial", '', 11)
         pdf.multi_cell(0, 6, datos['comentarios'])
 
-    # --- SECCIÓN 3: EVIDENCIA FOTOGRÁFICA ---
+    # FOTOS
     if imagenes_bytes:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 12)
@@ -175,8 +166,7 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
                 pdf.add_page()
                 y = 30
             
-            try: 
-                pdf.image(name, x=x, y=y, w=80, h=60)
+            try: pdf.image(name, x=x, y=y, w=80, h=60)
             except: pass
             
             os.unlink(name)
@@ -188,28 +178,31 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
 
 def subir_foto_worker(file, path):
     try:
+        # Renombrar archivo para evitar conflictos
         ext = file.name.split('.')[-1]
-        name = f"{path}_{uuid.uuid4().hex[:6]}.{ext}"
+        name = f"{path}_{uuid.uuid4().hex[:8]}.{ext}"
         bucket = "evidencias-taller"
+        
+        # Subir
         supabase.storage.from_(bucket).upload(name, file.getvalue(), {"content-type": file.type})
+        
+        # Retornar URL
         return supabase.storage.from_(bucket).get_public_url(name)
-    except: return None
+    except Exception as e:
+        print(f"Error subiendo {file.name}: {e}")
+        return None
 
 # ==========================================
-# 4. INTERFAZ PRINCIPAL CON LOGO
+# 4. INTERFAZ PRINCIPAL
 # ==========================================
-# Configuración del encabezado con Logo
-c_logo, c_title = st.columns([1, 4]) # Proporción para el logo
-
+c_logo, c_title = st.columns([1, 4]) 
 with c_logo:
-    # Busca el archivo logo.png. Si no está, pone el punto rojo.
     if os.path.exists("logo.png"):
-        st.image("logo.png", width=100) # Tamaño cómodo
+        st.image("logo.png", width=100)
     else:
         st.markdown("<h1>🔴</h1>", unsafe_allow_html=True)
-
 with c_title:
-    st.title("Cotizador Taller")
+    st.title("Sistema Taller")
     st.caption("Recepción y Diagnóstico")
 
 tab_nuevo, tab_historial = st.tabs(["📝 NUEVA ORDEN", "📂 HISTORIAL"])
@@ -220,94 +213,77 @@ with tab_nuevo:
     if "form_token" not in st.session_state: st.session_state.form_token = str(uuid.uuid4())
 
     with st.container():
-        # 1. BLOQUEO / DESBLOQUEO
-        tecnico = st.text_input("👤 Nombre Técnico (Obligatorio para desbloquear)", value=st.session_state.tecnico_actual)
+        tecnico = st.text_input("👤 Nombre Técnico (Obligatorio)", value=st.session_state.tecnico_actual)
         st.session_state.tecnico_actual = tecnico 
 
         if not tecnico:
-            st.warning("🔒 Escribe tu nombre arriba para habilitar el formulario.")
+            st.warning("🔒 Escribe tu nombre para habilitar.")
             st.stop()
         
         st.divider()
 
-        # 2. DATOS DE LA ORDEN Y ASESOR (Nuevo Campo)
         c_orden, c_asesor = st.columns(2)
         orden = c_orden.text_input("📋 Orden / Placas", key=f"ord_{st.session_state.form_token}")
-        asesor = c_asesor.text_input("👨‍💼 Asesor", placeholder="Nombre Asesor", key=f"ase_{st.session_state.form_token}")
+        asesor = c_asesor.text_input("👨‍💼 Asesor", key=f"ase_{st.session_state.form_token}")
         
-        # 3. DATOS DEL VEHÍCULO
         c_m, c_a = st.columns([2,1])
         modelo = c_m.selectbox("Modelo", ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Tundra", "Otro"], key=f"mod_{st.session_state.form_token}")
         anio = c_a.number_input("Año", 1990, 2026, 2024, key=f"yr_{st.session_state.form_token}")
         
-        # 4. REFACCIONES
         st.markdown("##### 🛠️ Refacciones a Cotizar")
-        fallas = st.text_area("Lista de refacciones y diagnóstico", height=100, key=f"fail_{st.session_state.form_token}", placeholder="Escribe aquí las refacciones...")
+        fallas = st.text_area("Refacciones y diagnóstico", height=100, key=f"fail_{st.session_state.form_token}")
 
-        # 5. FOTOS
         st.markdown("##### 📸 Evidencia")
         fotos = st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png','jpg','jpeg'], key=f"pix_{st.session_state.form_token}")
 
-        # 6. RECOMENDACIONES
         st.markdown("##### ⚠️ Recomendaciones Técnicas")
-        recomendaciones = st.text_area("Observaciones importantes para el asesor/cliente", height=80, key=f"rec_{st.session_state.form_token}", placeholder="Ej: Balatas al 30%, se sugiere cambio próximo servicio...")
+        recomendaciones = st.text_area("Observaciones importantes", height=80, key=f"rec_{st.session_state.form_token}")
 
-        # --- VALIDACIÓN TOTAL (NUEVO CÓDIGO) ---
-        # Solo será True si TODOS los campos tienen datos
+        # VALIDACIÓN OBLIGATORIA
         campos_llenos = (
             orden and 
             len(orden) > 2 and 
             asesor and 
             fallas and 
-            fotos and            # <--- AHORA OBLIGATORIO: Debe haber fotos
-            recomendaciones      # <--- AHORA OBLIGATORIO: Debe haber recomendaciones
+            fotos and 
+            recomendaciones
         )
         
-        # Aviso visual para que sepan qué falta
         if not campos_llenos:
-            st.warning("⚠️ Para enviar: Llena todos los datos, sube al menos una foto y escribe recomendaciones.")
+            st.warning("⚠️ FALTAN DATOS: Llena todo y sube fotos para enviar.")
 
-        # El botón se desbloquea solo si campos_llenos es True
         if st.button("🚀 ENVIAR A COTIZACIÓN", type="primary", use_container_width=True, disabled=not campos_llenos):
             status = st.status("⚙️ Procesando orden...", expanded=True)
             
-                # ... (Aquí sigue el resto de tu código de envío: subir fotos, pdf, supabase...)
-        try:
-                # A) Subir Fotos (MODO SECUENCIAL - ESTABILIDAD TOTAL)
+            try:
+                # 1. SUBIDA SECUENCIAL DE FOTOS
                 urls_fotos = []
                 img_bytes = [f.getvalue() for f in fotos]
                 
                 if fotos:
                     status.write("📸 Subiendo evidencia (una por una)...")
-                    # Usamos un bucle normal en lugar de hilos para evitar fallos de conexión
                     for i, file in enumerate(fotos):
-                        # Subimos y esperamos a que termine antes de ir a la siguiente
                         url = subir_foto_worker(file, f"{orden}_{tecnico}")
                         if url:
                             urls_fotos.append(url)
                         else:
-                            st.warning(f"No se pudo subir la imagen: {file.name}")
-
-                # B) Generar PDF (Incluyendo Asesor y Recomendaciones)
-                status.write("Generando PDF...")
+                            st.error(f"Error subiendo foto {i+1}")
+                
+                # 2. GENERAR PDF
+                status.write("📄 Generando PDF...")
                 datos_pdf = {
-                    "orden": orden.upper(), 
-                    "tecnico": tecnico.upper(), 
-                    "asesor": asesor.upper(), 
-                    "modelo": modelo, 
-                    "anio": anio, 
-                    "fallas": fallas, 
-                    "comentarios": recomendaciones
+                    "orden": orden.upper(), "tecnico": tecnico.upper(), "asesor": asesor.upper(), 
+                    "modelo": modelo, "anio": anio, "fallas": fallas, "comentarios": recomendaciones
                 }
                 pdf_bytes = generar_pdf_avanzado(datos_pdf, img_bytes)
                 
-                # C) Subir PDF
+                # 3. SUBIR PDF
                 pdf_name = f"Reporte_{orden}_{uuid.uuid4().hex[:4]}.pdf"
                 supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_bytes, {"content-type": "application/pdf"})
                 url_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
 
-                # D) Guardar en Base de Datos
-                status.write("Guardando solicitud...")
+                # 4. GUARDAR EN DB
+                status.write("💾 Guardando datos...")
                 payload = {
                     "orden_placas": orden.upper(),
                     "tecnico": tecnico.upper(),
@@ -316,14 +292,16 @@ with tab_nuevo:
                     "anio": anio,
                     "fallas_refacciones": fallas,
                     "comentarios": recomendaciones,
-                    "evidencia_fotos": urls_fotos, # Ahora esta lista SÍ tendrá las URLs
+                    "evidencia_fotos": urls_fotos,
                     "url_pdf": url_pdf,
                     "created_at": datetime.now().isoformat(),
                     "estado": "Pendiente"
                 }
                 supabase.table("evidencias_taller").insert(payload).execute()
                 
-                status.update(label="✅ ¡Orden Enviada a Cotización!", state="complete", expanded=False)
+                status.update(label="✅ ¡Enviado Correctamente!", state="complete", expanded=False)
+                st.balloons()
+                
                 st.session_state.form_token = str(uuid.uuid4())
                 time.sleep(1.5)
                 st.rerun()
@@ -373,7 +351,6 @@ with tab_historial:
             try: d = datetime.fromisoformat(item['created_at']).strftime("%d %b %H:%M")
             except: d = "--"
             
-            # Recuperar asesor si existe, si no, vacío
             asesor_info = item.get('asesor', '') 
             asesor_str = f"| 👨‍💼 {asesor_info}" if asesor_info else ""
 
