@@ -272,17 +272,21 @@ with tab_nuevo:
             status = st.status("⚙️ Procesando orden...", expanded=True)
             
                 # ... (Aquí sigue el resto de tu código de envío: subir fotos, pdf, supabase...)
-            try:
-                # A) Subir Fotos
+try:
+                # A) Subir Fotos (MODO SECUENCIAL - ESTABILIDAD TOTAL)
                 urls_fotos = []
                 img_bytes = [f.getvalue() for f in fotos]
-                if fotos:
-                    status.write("Subiendo evidencia...")
-                    with concurrent.futures.ThreadPoolExecutor() as exc:
-                        futures = [exc.submit(subir_foto_worker, f, f"{orden}_{tecnico}") for f in fotos]
-                        for f in concurrent.futures.as_completed(futures):
-                            if u:=f.result(): urls_fotos.append(u)
                 
+                if fotos:
+                    status.write("📸 Subiendo evidencia (una por una)...")
+                    # Usamos un bucle normal en lugar de hilos para evitar fallos de conexión
+                    for i, file in enumerate(fotos):
+                        # Subimos y esperamos a que termine antes de ir a la siguiente
+                        url = subir_foto_worker(file, f"{orden}_{tecnico}")
+                        if url:
+                            urls_fotos.append(url)
+                        else:
+                            st.warning(f"No se pudo subir la imagen: {file.name}")                
                 # B) Generar PDF (Incluyendo Asesor y Recomendaciones)
                 status.write("Generando PDF...")
                 datos_pdf = {
