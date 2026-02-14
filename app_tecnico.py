@@ -286,13 +286,14 @@ with tab_nuevo:
                         if url:
                             urls_fotos.append(url)
                         else:
-                            st.warning(f"No se pudo subir la imagen: {file.name}")               
+                            st.warning(f"No se pudo subir la imagen: {file.name}")
+
                 # B) Generar PDF (Incluyendo Asesor y Recomendaciones)
                 status.write("Generando PDF...")
                 datos_pdf = {
                     "orden": orden.upper(), 
                     "tecnico": tecnico.upper(), 
-                    "asesor": asesor.upper(), # Nuevo dato
+                    "asesor": asesor.upper(), 
                     "modelo": modelo, 
                     "anio": anio, 
                     "fallas": fallas, 
@@ -310,12 +311,12 @@ with tab_nuevo:
                 payload = {
                     "orden_placas": orden.upper(),
                     "tecnico": tecnico.upper(),
-                    "asesor": asesor.upper(), # Asegúrate que tu tabla tenga esta columna
+                    "asesor": asesor.upper(),
                     "auto_modelo": modelo,
                     "anio": anio,
                     "fallas_refacciones": fallas,
                     "comentarios": recomendaciones,
-                    "evidencia_fotos": urls_fotos,
+                    "evidencia_fotos": urls_fotos, # Ahora esta lista SÍ tendrá las URLs
                     "url_pdf": url_pdf,
                     "created_at": datetime.now().isoformat(),
                     "estado": "Pendiente"
@@ -327,7 +328,7 @@ with tab_nuevo:
                 time.sleep(1.5)
                 st.rerun()
                 
-          except Exception as e:
+            except Exception as e:
                 status.update(label="❌ Error", state="error")
                 st.error(f"Error técnico: {e}")
 
