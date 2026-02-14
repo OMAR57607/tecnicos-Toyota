@@ -9,6 +9,17 @@ import concurrent.futures
 import tempfile
 
 # ==========================================
+# 0. MANEJO DE ERRORES (SENTRY)
+# ==========================================
+sentry_sdk = None
+try:
+    import sentry_sdk
+    if os.environ.get("SENTRY_DSN"):
+        sentry_sdk.init(dsn=os.environ.get("SENTRY_DSN"), traces_sample_rate=1.0)
+except ImportError:
+    pass
+
+# ==========================================
 # 1. CONFIGURACIÓN Y ESTILOS
 # ==========================================
 st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centered")
@@ -20,14 +31,14 @@ st.markdown(f"""
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
     
-    /* Estilos Generales */
+    /* Inputs y Botones grandes para Móvil */
     .stTextInput input, .stSelectbox div, .stNumberInput input, .stTextArea textarea {{ 
         font-size: 16px !important; 
         min-height: 55px !important;
         border-radius: 8px !important;
     }}
     div.stButton > button {{
-        height: 55px !important;
+        height: 60px !important;
         font-size: 18px !important;
         font-weight: 700 !important;
         border-radius: 8px !important;
@@ -37,28 +48,37 @@ st.markdown(f"""
     .report-card {{
         background-color: white;
         border: 1px solid #ddd;
-        border-left: 5px solid {TOYOTA_RED};
+        border-left: 6px solid {TOYOTA_RED};
         border-radius: 8px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        padding: 15px;
+        margin-bottom: 15px;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+        padding: 0;
+        overflow: hidden;
     }}
     .card-header {{
+        background-color: #f9f9f9;
+        padding: 12px 15px;
+        border-bottom: 1px solid #eee;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 10px;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 5px;
     }}
-    .plate {{ font-size: 1.4rem; font-weight: 800; color: #333; }}
+    .plate {{ font-size: 1.3rem; font-weight: 800; color: #222; letter-spacing: 0.5px; }}
     .model-tag {{
         background-color: {TOYOTA_RED};
         color: white;
-        padding: 4px 12px;
-        border-radius: 20px;
+        padding: 5px 12px;
+        border-radius: 15px;
         font-weight: bold;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+    }}
+    .card-body {{ padding: 15px; color: #555; font-size: 0.95rem; }}
+    .card-footer {{
+        padding: 10px 15px;
+        background-color: #fff;
+        border-top: 1px dashed #eee;
+        text-align: right;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -74,13 +94,15 @@ def init_supabase():
     except:
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_KEY")
-    return create_client(url, key) if url and key else None
+    
+    if not url or not key: return None
+    return create_client(url, key)
 
 supabase = init_supabase()
 if not supabase: st.stop()
 
 # ==========================================
-# 3. FUNCIONES AUXILIARES
+# 3. FUNCIONES (PDF & FOTOS)
 # ==========================================
 class PDFReport(FPDF):
     def header(self):
@@ -92,40 +114,73 @@ class PDFReport(FPDF):
 def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf = PDFReport()
     pdf.add_page()
+    
+    # --- DATOS GENERALES ---
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 8, f" FOLIO: {datos['orden']}  |  FECHA: {datetime.now().strftime('%d/%m/%Y')}", 1, 1, 'L', fill=True)
-    pdf.ln(5)
+    pdf.set_text_color(0)
+    header_info = f" FOLIO: {datos['orden']}  |  FECHA: {datetime.now().strftime('%d/%m/%Y')}"
+    pdf.cell(0, 8, header_info, 1, 1, 'L', fill=True)
+    pdf.ln(4)
+    
     pdf.set_font("Arial", '', 10)
     pdf.cell(95, 8, f"Técnico: {datos['tecnico']}", 0)
     pdf.cell(95, 8, f"Vehículo: {datos['modelo']} ({datos['anio']})", 0, 1)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(5)
+    
+    # --- SECCIÓN 1: REFACCIONES A COTIZAR ---
+    pdf.ln(6)
     pdf.set_font("Arial", 'B', 12)
-    pdf.set_text_color(235, 10, 30)
-    pdf.cell(0, 10, "DIAGNÓSTICO", 0, 1)
-    pdf.set_text_color(0)
+    pdf.set_text_color(235, 10, 30) # Rojo
+    pdf.cell(0, 8, "REFACCIONES A COTIZAR / FALLAS", 0, 1)
+    pdf.set_text_color(0) # Negro
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 6, datos['fallas'])
     
+    # --- SECCIÓN 2: RECOMENDACIONES TÉCNICAS (¡AHORA SÍ APARECE!) ---
+    if datos['comentarios']:
+        pdf.ln(6)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.set_text_color(235, 10, 30) # Rojo
+        pdf.cell(0, 8, "RECOMENDACIONES TÉCNICAS", 0, 1)
+        pdf.set_text_color(0) # Negro
+        pdf.set_font("Arial", '', 11)
+        pdf.multi_cell(0, 6, datos['comentarios'])
+
+    # --- SECCIÓN 3: EVIDENCIA FOTOGRÁFICA ---
     if imagenes_bytes:
         pdf.add_page()
-        pdf.cell(0, 10, "EVIDENCIA", 0, 1)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.set_text_color(235, 10, 30)
+        pdf.cell(0, 10, "EVIDENCIA FOTOGRÁFICA", 0, 1)
+        
         x, y = 10, 30
         for i, img in enumerate(imagenes_bytes):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 tmp.write(img)
                 name = tmp.name
-            if y > 240: pdf.add_page(); y=30
-            try: pdf.image(name, x=x, y=y, w=80, h=60)
+            
+            # Control de salto de página para fotos
+            if y > 240: 
+                pdf.add_page()
+                y = 30
+            
+            try: 
+                pdf.image(name, x=x, y=y, w=80, h=60)
             except: pass
+            
             os.unlink(name)
-            if i%2==0: x+=90
-            else: x=10; y+=70
+            
+            # Mover coordenadas (Grid 2 columnas)
+            if i % 2 == 0: 
+                x += 90
+            else: 
+                x = 10
+                y += 70
             
     return pdf.output(dest='S').encode('latin-1')
 
-def subir_foto(file, path):
+def subir_foto_worker(file, path):
     try:
         ext = file.name.split('.')[-1]
         name = f"{path}_{uuid.uuid4().hex[:6]}.{ext}"
@@ -145,23 +200,22 @@ tab_nuevo, tab_historial = st.tabs(["📝 NUEVA ORDEN", "📂 HISTORIAL"])
 
 # --- TAB 1: FORMULARIO ---
 with tab_nuevo:
-    # ### ARREGLO 1: Persistencia del Técnico
+    # Variables de Sesión
     if "tecnico_actual" not in st.session_state: st.session_state.tecnico_actual = ""
-    # ### ARREGLO 2: Token único para evitar duplicados
     if "form_token" not in st.session_state: st.session_state.form_token = str(uuid.uuid4())
 
     with st.container():
-        # Input del técnico siempre visible
-        tecnico = st.text_input("👤 Nombre del Técnico", value=st.session_state.tecnico_actual, placeholder="Ingresa tu nombre para desbloquear")
-        st.session_state.tecnico_actual = tecnico # Guardar en tiempo real
+        # 1. BLOQUEO / DESBLOQUEO
+        tecnico = st.text_input("👤 Nombre Técnico (Obligatorio para desbloquear)", value=st.session_state.tecnico_actual)
+        st.session_state.tecnico_actual = tecnico 
 
         if not tecnico:
-            st.warning("🔒 Escribe tu nombre para comenzar.")
+            st.warning("🔒 Escribe tu nombre arriba para habilitar el formulario.")
             st.stop()
         
         st.divider()
 
-        # Usamos form_token en los keys para limpiar los campos al cambiar el token
+        # 2. DATOS DEL VEHÍCULO
         col_ord, _ = st.columns([2,1])
         orden = col_ord.text_input("📋 Orden / Placas", key=f"ord_{st.session_state.form_token}")
         
@@ -169,94 +223,114 @@ with tab_nuevo:
         modelo = c_m.selectbox("Modelo", ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Tundra", "Otro"], key=f"mod_{st.session_state.form_token}")
         anio = c_a.number_input("Año", 1990, 2026, 2024, key=f"yr_{st.session_state.form_token}")
         
-        fallas = st.text_area("Fallas", height=100, key=f"fail_{st.session_state.form_token}")
-        fotos = st.file_uploader("Fotos", accept_multiple_files=True, type=['png','jpg'], key=f"pix_{st.session_state.form_token}")
-        notas = st.text_area("Notas extra", height=60, key=f"note_{st.session_state.form_token}")
+        # 3. REFACCIONES A COTIZAR (Antes Fallas)
+        st.markdown("##### 🛠️ Refacciones a Cotizar")
+        fallas = st.text_area("Lista de refacciones y diagnóstico", height=100, key=f"fail_{st.session_state.form_token}", placeholder="Escribe aquí las refacciones...")
 
-        if st.button("🚀 ENVIAR REPORTE", type="primary", use_container_width=True, disabled=not(orden and fallas)):
-            status = st.status("⚙️ Procesando...", expanded=True)
+        # 4. FOTOS (Ahora van ANTES de las recomendaciones)
+        st.markdown("##### 📸 Evidencia")
+        fotos = st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png','jpg','jpeg'], key=f"pix_{st.session_state.form_token}")
+
+        # 5. RECOMENDACIONES TÉCNICAS (Ahora al final)
+        st.markdown("##### ⚠️ Recomendaciones Técnicas")
+        recomendaciones = st.text_area("Observaciones importantes para el asesor/cliente", height=80, key=f"rec_{st.session_state.form_token}", placeholder="Ej: Balatas al 30%, se sugiere cambio próximo servicio...")
+
+        # BOTÓN DE ENVÍO
+        campos_llenos = orden and fallas and len(orden) > 2
+        
+        if st.button("🚀 ENVIAR A COTIZACIÓN", type="primary", use_container_width=True, disabled=not campos_llenos):
+            status = st.status("⚙️ Procesando orden...", expanded=True)
             try:
-                # 1. Fotos
-                urls = []
-                bytes_img = [f.getvalue() for f in fotos]
+                # A) Subir Fotos
+                urls_fotos = []
+                img_bytes = [f.getvalue() for f in fotos]
                 if fotos:
-                    status.write("Subiendo fotos...")
+                    status.write("Subiendo evidencia...")
                     with concurrent.futures.ThreadPoolExecutor() as exc:
-                        futures = [exc.submit(subir_foto, f, f"{orden}_{tecnico}") for f in fotos]
+                        futures = [exc.submit(subir_foto_worker, f, f"{orden}_{tecnico}") for f in fotos]
                         for f in concurrent.futures.as_completed(futures):
-                            if u:=f.result(): urls.append(u)
+                            if u:=f.result(): urls_fotos.append(u)
                 
-                # 2. PDF
-                status.write("Generando PDF...")
-                pdf_data = generar_pdf_avanzado(
-                    {"orden":orden, "tecnico":tecnico, "modelo":modelo, "anio":anio, "fallas":fallas, "comentarios":notas}, 
-                    bytes_img
-                )
+                # B) Generar PDF (Incluyendo Recomendaciones)
+                status.write("Generando PDF con recomendaciones...")
+                datos_pdf = {
+                    "orden": orden.upper(), 
+                    "tecnico": tecnico.upper(), 
+                    "modelo": modelo, 
+                    "anio": anio, 
+                    "fallas": fallas, 
+                    "comentarios": recomendaciones # Aquí pasamos las recomendaciones al PDF
+                }
+                pdf_bytes = generar_pdf_avanzado(datos_pdf, img_bytes)
+                
+                # C) Subir PDF
                 pdf_name = f"Reporte_{orden}_{uuid.uuid4().hex[:4]}.pdf"
-                supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_data, {"content-type": "application/pdf"})
+                supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_bytes, {"content-type": "application/pdf"})
                 url_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
 
-                # 3. DB
-                status.write("Guardando...")
-                supabase.table("evidencias_taller").insert({
-                    "orden_placas": orden.upper(), "tecnico": tecnico.upper(), "auto_modelo": modelo,
-                    "anio": anio, "fallas_refacciones": fallas, "comentarios": notas,
-                    "evidencia_fotos": urls, "url_pdf": url_pdf,
-                    "created_at": datetime.now().isoformat()
-                }).execute()
+                # D) Guardar en Base de Datos (ESTATUS PENDIENTE)
+                status.write("Guardando solicitud...")
+                payload = {
+                    "orden_placas": orden.upper(),
+                    "tecnico": tecnico.upper(),
+                    "auto_modelo": modelo,
+                    "anio": anio,
+                    "fallas_refacciones": fallas,    # Refacciones
+                    "comentarios": recomendaciones,  # Recomendaciones Técnicas
+                    "evidencia_fotos": urls_fotos,
+                    "url_pdf": url_pdf,
+                    "created_at": datetime.now().isoformat(),
+                    "estado": "Pendiente"  # <--- IMPORTANTE: Estatus inicial
+                }
+                supabase.table("evidencias_taller").insert(payload).execute()
                 
-                status.update(label="✅ ¡Listo!", state="complete", expanded=False)
-                
-                # ### ARREGLO: Resetear Token para limpiar campos y EVITAR DUPLICADOS
-                st.session_state.form_token = str(uuid.uuid4()) 
-                time.sleep(1)
+                status.update(label="✅ ¡Orden Enviada a Cotización!", state="complete", expanded=False)
+                st.session_state.form_token = str(uuid.uuid4()) # Limpiar formulario
+                time.sleep(1.5)
                 st.rerun()
                 
             except Exception as e:
-                st.error(f"Error: {e}")
+                status.update(label="❌ Error", state="error")
+                st.error(f"Detalle del error: {e}")
 
-# --- TAB 2: HISTORIAL (ARREGLADO VISUALMENTE) ---
+# --- TAB 2: HISTORIAL ---
 with tab_historial:
     if "page" not in st.session_state: st.session_state.page = 0
     if "busqueda" not in st.session_state: st.session_state.busqueda = ""
     
     ITEMS = 5
 
-    # ### ARREGLO 3: Callback para limpiar Búsqueda REALMENTE
-    def limpiar():
+    def limpiar_busqueda():
         st.session_state.busqueda = ""
         st.session_state.page = 0
 
-    c_search, c_x = st.columns([5, 1])
-    # Vinculamos el text_input directamente al session_state
-    txt = c_search.text_input("🔍 Buscar:", key="busqueda", placeholder="Placa, modelo...", label_visibility="collapsed")
-    
-    # Botón con callback 'on_click'
-    c_x.button("✖️", on_click=limpiar, use_container_width=True)
+    c_s, c_x = st.columns([5, 1])
+    txt = c_s.text_input("🔍 Buscar:", key="busqueda", placeholder="Placa, modelo...", label_visibility="collapsed")
+    c_x.button("✖️", on_click=limpiar_busqueda, use_container_width=True)
 
-    # Lógica
-    start = st.session_state.page * ITEMS
-    end = start + ITEMS - 1
-    
+    # Query Base
     q = supabase.table("evidencias_taller").select("*", count="exact").order("created_at", desc=True)
     
+    # Lógica de Paginación vs Búsqueda
+    start = st.session_state.page * ITEMS
+    end = start + ITEMS - 1
+
     if txt:
         f = f"orden_placas.ilike.%{txt}%,tecnico.ilike.%{txt}%,auto_modelo.ilike.%{txt}%"
         res = q.or_(f).limit(20).execute()
         data = res.data
         total = len(data)
-        searching = True
+        is_search = True
     else:
         res = q.range(start, end).execute()
         data = res.data
         total = res.count or 0
-        searching = False
+        is_search = False
 
-    # Renderizado
-    st.caption(f"Registros encontrados: {total}")
+    st.caption(f"Registros: {total}")
 
     if not data:
-        st.info("No hay datos.")
+        st.info("No hay órdenes pendientes.")
     else:
         for item in data:
             try: d = datetime.fromisoformat(item['created_at']).strftime("%d %b %H:%M")
@@ -268,33 +342,30 @@ with tab_historial:
                     <span class="plate">{item['orden_placas']}</span>
                     <span class="model-tag">{item['auto_modelo']}</span>
                 </div>
-                <div style="color:#555; margin-bottom:10px;">
-                    👤 {item['tecnico']} &nbsp;|&nbsp; 📅 {d}
+                <div class="card-body">
+                    👤 {item['tecnico']} <br>
+                    📅 {d} <br>
+                    <span style="color:#EB0A1E; font-size:0.8em;">• Estatus: {item.get('estado', 'Pendiente')}</span>
                 </div>
-                <div style="text-align:right;">
-                    <a href="{item['url_pdf']}" target="_blank" style="color:{TOYOTA_RED}; font-weight:bold; border:1px solid {TOYOTA_RED}; padding:5px 10px; border-radius:5px;">
+                <div class="card-footer">
+                    <a href="{item['url_pdf']}" target="_blank" style="color:#EB0A1E; font-weight:bold;">
                         📄 VER PDF
                     </a>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-    # ### ARREGLO 4: Paginación SIEMPRE VISIBLE (Incluso si solo hay 1 página)
-    # Lo sacamos de condicionales complejos para que se vea la estructura
-    if not searching:
+    # Botones Paginación
+    if not is_search:
         st.markdown("---")
         col_p, col_lbl, col_n = st.columns([1, 2, 1])
-        
         with col_p:
             if st.button("⬅️", disabled=(st.session_state.page == 0), use_container_width=True):
                 st.session_state.page -= 1
                 st.rerun()
-        
         with col_lbl:
             st.markdown(f"<div style='text-align:center; margin-top:15px;'>Página <b>{st.session_state.page + 1}</b></div>", unsafe_allow_html=True)
-            
         with col_n:
-            # Deshabilitar si hemos llegado al final
             if st.button("➡️", disabled=(end >= total), use_container_width=True):
                 st.session_state.page += 1
                 st.rerun()
