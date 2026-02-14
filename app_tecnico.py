@@ -107,10 +107,10 @@ if not supabase: st.stop()
 class PDFReport(FPDF):
     def header(self):
         # Intentar poner el logo en el PDF si existe
-        if os.path.exists("logo.png"):
+        #if os.path.exists("logo.png"):
             # x, y, w (ajusta según tu logo)
-            self.image("logo.png", 10, 8, 25) 
-            self.set_xy(40, 10) # Mover cursor a la derecha del logo
+            #self.image("logo.png", 10, 8, 25) 
+            #self.set_xy(40, 10) # Mover cursor a la derecha del logo
         
         self.set_font('Arial', 'B', 15)
         self.set_text_color(235, 10, 30)
