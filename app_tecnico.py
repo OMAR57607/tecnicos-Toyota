@@ -14,21 +14,37 @@ import tempfile
 st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centered")
 
 TOYOTA_RED = "#EB0A1E"
-TOYOTA_BLACK = "#000000"
 
 st.markdown(f"""
     <style>
-    /* ... (mantén tus estilos de inputs y botones anteriores) ... */
+    /* Ocultar elementos default */
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
     
-    /* NUEVA TARJETA MEJORADA */
+    /* Inputs más grandes */
+    .stTextInput input, .stSelectbox div, .stNumberInput input, .stTextArea textarea {{ 
+        font-size: 16px !important; 
+        min-height: 55px !important;
+        border-radius: 8px !important;
+    }}
+    
+    /* Botones primarios */
+    div.stButton > button {{
+        height: 60px !important;
+        font-size: 18px !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        transition: all 0.3s ease;
+    }}
+    
+    /* === TARJETA MEJORADA === */
     .report-card {{
         background-color: white;
         border: 1px solid #e0e0e0;
         border-radius: 12px;
-        padding: 0; /* Quitamos padding del contenedor principal para manejarlo dentro */
         margin-bottom: 16px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        overflow: hidden; /* Para que el borde rojo no se salga */
+        overflow: hidden;
     }}
     
     .card-header {{
@@ -47,8 +63,8 @@ st.markdown(f"""
     }}
     
     .card-model {{
-        background-color: {TOYOTA_RED}; /* Fondo ROJO */
-        color: white; /* Texto BLANCO */
+        background-color: {TOYOTA_RED};
+        color: white;
         padding: 4px 12px;
         border-radius: 20px;
         font-weight: bold;
@@ -70,12 +86,12 @@ st.markdown(f"""
     }}
     </style>
 """, unsafe_allow_html=True)
+
 # ==========================================
 # 2. GESTIÓN DE SUPABASE
 # ==========================================
 @st.cache_resource
 def init_supabase():
-    # Intenta obtener secretos de st.secrets primero (producción), luego env vars (local)
     try:
         url = st.secrets["supabase"]["url"]
         key = st.secrets["supabase"]["key"]
@@ -111,7 +127,7 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf = PDFReport()
     pdf.add_page()
     
-    # --- SECCIÓN 1: DATOS ---
+    # DATOS
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f" FOLIO: {datos['orden']}  |  FECHA: {datetime.now().strftime('%d/%m/%Y')}", 1, 1, 'L', fill=True)
@@ -120,12 +136,11 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf.set_font("Arial", '', 10)
     pdf.set_text_color(0)
     
-    # Tabla simple de datos
     pdf.cell(95, 8, f"Técnico: {datos['tecnico']}", 0)
     pdf.cell(95, 8, f"Vehículo: {datos['modelo']} ({datos['anio']})", 0, 1)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     
-    # --- SECCIÓN 2: FALLAS ---
+    # FALLAS
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(235, 10, 30)
@@ -141,63 +156,51 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, datos['comentarios'])
 
-    # --- SECCIÓN 3: EVIDENCIA FOTOGRÁFICA ---
+    # FOTOS
     if imagenes_bytes:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 12)
         pdf.set_text_color(235, 10, 30)
         pdf.cell(0, 10, "EVIDENCIA FOTOGRÁFICA", 0, 1)
         
-        # Guardar imágenes temporalmente para insertarlas en el PDF
         x, y = 10, 30
         for i, img_data in enumerate(imagenes_bytes):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 tmp.write(img_data)
                 tmp_path = tmp.name
             
-            # Lógica simple de grid (2 imágenes por fila)
             if i > 0 and i % 2 == 0:
-                y += 110 # Salto de fila
+                y += 110 
                 x = 10
-                if y > 250: # Nueva página si se acaba el espacio
+                if y > 250: 
                     pdf.add_page()
                     y = 30
             
             try:
-                # Ajustar tamaño manteniendo proporción (aprox)
                 pdf.image(tmp_path, x=x, y=y, w=90, h=60)
                 x += 100
             except:
                 pass
-            os.unlink(tmp_path) # Limpiar temp
+            os.unlink(tmp_path)
 
     return pdf.output(dest='S').encode('latin-1')
 
 def subir_imagen_worker(archivo, ruta_base):
-    """ Función auxiliar para subir imágenes en paralelo """
     try:
         ext = archivo.name.split('.')[-1]
         filename = f"{ruta_base}_{uuid.uuid4().hex[:6]}.{ext}"
         bucket = "evidencias-taller"
-        
-        # Subir
         supabase.storage.from_(bucket).upload(filename, archivo.getvalue(), {"content-type": archivo.type})
-        
-        # Obtener URL Pública
-        public_url = supabase.storage.from_(bucket).get_public_url(filename)
-        return public_url
+        return supabase.storage.from_(bucket).get_public_url(filename)
     except Exception as e:
-        print(f"Error subiendo {archivo.name}: {e}")
         return None
 
 # ==========================================
 # 4. INTERFAZ GRÁFICA
 # ==========================================
 
-# Cabecera
 c1, c2 = st.columns([1, 5])
 with c1:
-    # Placeholder si no hay logo
     st.markdown("🔴", unsafe_allow_html=True) 
 with c2:
     st.title("Sistema Taller")
@@ -207,15 +210,39 @@ tab_nuevo, tab_historial = st.tabs(["📝 NUEVA ORDEN", "📂 HISTORIAL"])
 
 # --- TAB 1: FORMULARIO ---
 with tab_nuevo:
-    # Gestión de estado del formulario
-    if "form_reset_token" not in st.session_state: st.session_state.form_reset_token = str(uuid.uuid4())
+    # 1. Recuperar nombre del técnico de la sesión (persistencia)
+    if "tecnico_actual" not in st.session_state:
+        st.session_state.tecnico_actual = ""
+
+    # 2. Token de formulario para limpiar después de enviar
+    if "form_reset_token" not in st.session_state: 
+        st.session_state.form_reset_token = str(uuid.uuid4())
     
     with st.container():
-        st.info("💡 Llena los campos obligatorios para habilitar el envío.")
+        # --- ZONA DE DESBLOQUEO ---
+        st.markdown("### 👤 Identificación")
+        tecnico_input = st.text_input(
+            "Nombre del Técnico (Obligatorio para desbloquear)", 
+            value=st.session_state.tecnico_actual,
+            placeholder="Ej: Juan Perez",
+            help="Escribe tu nombre una vez y se recordará mientras no recargues la página."
+        )
+
+        # Guardar en sesión cuando el usuario escribe
+        st.session_state.tecnico_actual = tecnico_input
+
+        # Si no hay nombre, bloqueamos el resto
+        if not tecnico_input:
+            st.warning("🔒 Por favor, ingresa tu nombre para habilitar el formulario de orden.")
+            st.stop() # DETIENE LA EJECUCIÓN AQUÍ
+
+        # --- ZONA DE FORMULARIO (Solo visible si hay técnico) ---
+        st.success(f"Hola, {tecnico_input}. Formulario habilitado.")
         
-        col_t1, col_t2 = st.columns(2)
-        tecnico = col_t1.text_input("Técnico Responsable", key="tech_name")
-        orden = col_t2.text_input("No. Orden / Placa", key=f"ord_{st.session_state.form_reset_token}")
+        st.markdown("---")
+        
+        col_orden, col_fake = st.columns([2, 1])
+        orden = col_orden.text_input("📋 No. Orden / Placa", key=f"ord_{st.session_state.form_reset_token}")
         
         c_mod, c_anio = st.columns([2, 1])
         modelo = c_mod.selectbox("Modelo", ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Raize", "Tundra", "Otro"], key=f"mod_{st.session_state.form_reset_token}")
@@ -229,30 +256,29 @@ with tab_nuevo:
         st.markdown("---")
         
         # Validación
-        es_valido = tecnico and orden and fallas and len(orden) > 2
+        es_valido = orden and fallas and len(orden) > 2
 
-        if st.button("🚀 PROCESAR ORDEN", type="primary", use_container_width=True, disabled=not es_valido):
+        if st.button("🚀 ENVIAR ORDEN FINALIZADA", type="primary", use_container_width=True, disabled=not es_valido):
             
-            status_container = st.status("⚙️ Iniciando proceso...", expanded=True)
+            status_container = st.status("⚙️ Procesando orden...", expanded=True)
             
             try:
-                # 1. Subida paralela de imágenes
+                # 1. Subida imágenes
                 urls_fotos = []
-                imagenes_bytes = [f.getvalue() for f in fotos] # Guardar bytes para el PDF
+                imagenes_bytes = [f.getvalue() for f in fotos]
                 
                 if fotos:
-                    status_container.write("📸 Subiendo imágenes a la nube...")
+                    status_container.write("📸 Subiendo imágenes...")
                     with concurrent.futures.ThreadPoolExecutor() as executor:
-                        # Preparamos los argumentos para cada hilo
-                        futures = [executor.submit(subir_imagen_worker, f, f"{orden}_{tecnico}") for f in fotos]
+                        futures = [executor.submit(subir_imagen_worker, f, f"{orden}_{tecnico_input}") for f in fotos]
                         for future in concurrent.futures.as_completed(futures):
                             url = future.result()
                             if url: urls_fotos.append(url)
                 
-                # 2. Generación de PDF
-                status_container.write("📄 Generando reporte PDF...")
+                # 2. PDF
+                status_container.write("📄 Generando PDF...")
                 datos_pdf = {
-                    "orden": orden.upper(), "tecnico": tecnico.upper(),
+                    "orden": orden.upper(), "tecnico": tecnico_input.upper(),
                     "modelo": modelo, "anio": anio, "fallas": fallas, "comentarios": comentarios
                 }
                 pdf_bytes = generar_pdf_avanzado(datos_pdf, imagenes_bytes)
@@ -262,11 +288,11 @@ with tab_nuevo:
                 supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_bytes, {"content-type": "application/pdf"})
                 url_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
                 
-                # 4. Guardar en Base de Datos
-                status_container.write("💾 Registrando en base de datos...")
+                # 4. DB
+                status_container.write("💾 Guardando en sistema...")
                 payload = {
                     "orden_placas": orden.upper(),
-                    "tecnico": tecnico.upper(),
+                    "tecnico": tecnico_input.upper(),
                     "auto_modelo": modelo,
                     "anio": anio,
                     "fallas_refacciones": fallas,
@@ -274,76 +300,65 @@ with tab_nuevo:
                     "evidencia_fotos": urls_fotos,
                     "url_pdf": url_pdf,
                     "created_at": datetime.now().isoformat(),
-                    "estado": "Procesado"
+                    "estado": "Finalizado"
                 }
                 supabase.table("evidencias_taller").insert(payload).execute()
                 
-                status_container.update(label="✅ ¡Proceso Exitoso!", state="complete", expanded=False)
+                status_container.update(label="✅ ¡Enviado Exitosamente!", state="complete", expanded=False)
                 
-                # Botón de descarga directa
-                st.download_button("📥 DESCARGAR REPORTE", pdf_bytes, file_name=pdf_name, mime="application/pdf", use_container_width=True)
+                # Generamos un nuevo token para el formulario -> ESTO LIMPIA LOS CAMPOS
+                st.session_state.form_reset_token = str(uuid.uuid4())
                 
-                # Resetear form (opcional, o dejar para que el usuario limpie)
-                if st.button("Nuevo Reporte"):
-                    st.session_state.form_reset_token = str(uuid.uuid4())
-                    st.rerun()
+                st.balloons()
+                time.sleep(1) # Breve pausa para ver el éxito
+                st.rerun() # RECARGA LA PÁGINA: Mantiene el técnico, borra lo demás.
 
             except Exception as e:
                 status_container.update(label="❌ Error", state="error")
                 st.error(f"Ocurrió un error: {str(e)}")
 
-# --- TAB 2: HISTORIAL ---
+# --- TAB 2: HISTORIAL (CON TU LÓGICA DE PAGINACIÓN) ---
 with tab_historial:
-    # --- GESTIÓN DE ESTADO DE PAGINACIÓN ---
     if "page" not in st.session_state: st.session_state.page = 0
-    ITEMS_PER_PAGE = 5  # Muestra 5 tarjetas por página para que sea ligero en móvil
+    ITEMS_PER_PAGE = 5
 
-    # --- BARRA DE BÚSQUEDA ---
     c_search, c_reset = st.columns([4, 1])
     query_txt = c_search.text_input("🔍 Buscar:", placeholder="Placa, modelo...", label_visibility="collapsed")
-    if c_reset.button("✖️", help="Limpiar búsqueda"):
-        st.session_state.page = 0 # Resetear página al limpiar
-        query_txt = "" # (Nota: esto requiere rerun para limpiar visualmente el input, o usar session state en el input)
+    if c_reset.button("✖️"):
+        st.session_state.page = 0
         st.rerun()
 
-    # --- CONSULTA A SUPABASE CON PAGINACIÓN ---
-    # Calculamos el rango (ej. Pagina 0: 0 a 9, Pagina 1: 10 a 19)
+    # Cálculo de paginación
     start = st.session_state.page * ITEMS_PER_PAGE
     end = start + ITEMS_PER_PAGE - 1
 
     query = supabase.table("evidencias_taller").select("*", count="exact").order("created_at", desc=True)
 
-    # Si hay búsqueda, NO usamos paginación estándar (o reiniciamos a pag 0)
     if query_txt:
         filtro = f"orden_placas.ilike.%{query_txt}%,tecnico.ilike.%{query_txt}%,auto_modelo.ilike.%{query_txt}%"
         query = query.or_(filtro)
-        # Nota: Al buscar, traemos los primeros 20 resultados coincidentes
         data_response = query.limit(20).execute()
         total_rows = len(data_response.data)
         is_search = True
     else:
-        # Si NO hay búsqueda, aplicamos rango de paginación
         data_response = query.range(start, end).execute()
-        total_rows = data_response.count # Supabase nos dice cuántos hay en total
+        total_rows = data_response.count
         is_search = False
 
     data = data_response.data
 
-    # --- VISUALIZACIÓN DE TARJETAS ---
     if not data:
-        st.info("📭 No se encontraron registros.")
+        st.info("📭 No hay reportes recientes.")
     else:
         if not is_search:
             st.caption(f"Mostrando {start + 1} - {min(end + 1, total_rows)} de {total_rows} órdenes")
 
         for item in data:
-            # Parseo de fecha
             try:
                 dt = datetime.fromisoformat(item['created_at'])
-                fecha_fmt = dt.strftime("%d %b %H:%M") # Ej: 13 Feb 14:30
+                fecha_fmt = dt.strftime("%d %b %H:%M")
             except: fecha_fmt = "--/--"
 
-            # Renderizado HTML con el NUEVO DISEÑO
             st.markdown(f"""
                 <div class="report-card">
                     <div class="card-header">
@@ -366,20 +381,14 @@ with tab_historial:
                 </div>
             """, unsafe_allow_html=True)
 
-    # --- BOTONES DE PAGINACIÓN (SOLO SI NO ESTAMOS BUSCANDO) ---
+    # Botones Paginación
     if not is_search and total_rows > ITEMS_PER_PAGE:
         c_prev, c_page, c_next = st.columns([1, 2, 1])
-        
         with c_prev:
             if st.button("⬅️ Anterior", disabled=(st.session_state.page == 0), use_container_width=True):
                 st.session_state.page -= 1
                 st.rerun()
-        
-        with c_page:
-            st.markdown(f"<p style='text-align:center; padding-top:10px;'>Página {st.session_state.page + 1}</p>", unsafe_allow_html=True)
-            
         with c_next:
-            # Deshabilitar si ya no hay más registros
             if st.button("Siguiente ➡️", disabled=(end >= total_rows), use_container_width=True):
                 st.session_state.page += 1
                 st.rerun()
