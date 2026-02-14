@@ -327,9 +327,9 @@ with tab_nuevo:
                 time.sleep(1.5)
                 st.rerun()
                 
-            except Exception as e:
+          except Exception as e:
                 status.update(label="❌ Error", state="error")
-                st.error(f"Error: {e}. (Verifica que la columna 'asesor' exista en Supabase)")
+                st.error(f"Error técnico: {e}")
 
 # --- TAB 2: HISTORIAL ---
 with tab_historial:
