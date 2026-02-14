@@ -272,7 +272,7 @@ with tab_nuevo:
             status = st.status("⚙️ Procesando orden...", expanded=True)
             
                 # ... (Aquí sigue el resto de tu código de envío: subir fotos, pdf, supabase...)
-try:
+        try:
                 # A) Subir Fotos (MODO SECUENCIAL - ESTABILIDAD TOTAL)
                 urls_fotos = []
                 img_bytes = [f.getvalue() for f in fotos]
@@ -286,7 +286,7 @@ try:
                         if url:
                             urls_fotos.append(url)
                         else:
-                            st.warning(f"No se pudo subir la imagen: {file.name}")                
+                            st.warning(f"No se pudo subir la imagen: {file.name}")               
                 # B) Generar PDF (Incluyendo Asesor y Recomendaciones)
                 status.write("Generando PDF...")
                 datos_pdf = {
