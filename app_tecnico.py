@@ -213,31 +213,31 @@ with tab_nuevo:
     if "form_token" not in st.session_state: st.session_state.form_token = str(uuid.uuid4())
 
     with st.container():
-        tecnico = st.text_input("👤 Nombre Técnico (Obligatorio)", value=st.session_state.tecnico_actual)
+        tecnico = st.text_input("👤 Tu Nombre", value=st.session_state.tecnico_actual, placeholder="Ej: Juan Pérez")
         st.session_state.tecnico_actual = tecnico 
 
         if not tecnico:
-            st.warning("🔒 Escribe tu nombre para habilitar.")
+            st.info("👋 ¡Hola! Por favor escribe tu nombre para comenzar.")
             st.stop()
         
         st.divider()
 
         c_orden, c_asesor = st.columns(2)
-        orden = c_orden.text_input("📋 Orden / Placas", key=f"ord_{st.session_state.form_token}")
-        asesor = c_asesor.text_input("👨‍💼 Asesor", key=f"ase_{st.session_state.form_token}")
+        orden = c_orden.text_input("📋 Orden / Placas", key=f"ord_{st.session_state.form_token}", placeholder="Ej: 12345 o Placas")
+        asesor = c_asesor.text_input("👨‍💼 Asesor", key=f"ase_{st.session_state.form_token}", placeholder="Ej: Laura García")
         
         c_m, c_a = st.columns([2,1])
         modelo = c_m.selectbox("Modelo", ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Tundra", "Otro"], key=f"mod_{st.session_state.form_token}")
         anio = c_a.number_input("Año", 1990, 2026, 2024, key=f"yr_{st.session_state.form_token}")
         
-        st.markdown("##### 🛠️ Refacciones a Cotizar")
-        fallas = st.text_area("Refacciones y diagnóstico", height=100, key=f"fail_{st.session_state.form_token}")
+        st.markdown("##### 🛠️ Refacciones y Diagnóstico")
+        fallas = st.text_area("Detalla las refacciones a cotizar", height=100, key=f"fail_{st.session_state.form_token}", placeholder="Ej: Amortiguadores delanteros, Balatas traseras...")
 
-        st.markdown("##### 📸 Evidencia")
-        fotos = st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png','jpg','jpeg'], key=f"pix_{st.session_state.form_token}")
+        st.markdown("##### 📸 Evidencia (Fotos)")
+        fotos = st.file_uploader("Sube tus fotos aquí", accept_multiple_files=True, type=['png','jpg','jpeg'], key=f"pix_{st.session_state.form_token}")
 
         st.markdown("##### ⚠️ Recomendaciones Técnicas")
-        recomendaciones = st.text_area("Observaciones importantes", height=80, key=f"rec_{st.session_state.form_token}")
+        recomendaciones = st.text_area("Observaciones para el cliente", height=80, key=f"rec_{st.session_state.form_token}", placeholder="Ej: Se recomienda cambio de llantas en el próximo servicio...")
 
         # VALIDACIÓN OBLIGATORIA
         campos_llenos = (
@@ -250,10 +250,10 @@ with tab_nuevo:
         )
         
         if not campos_llenos:
-            st.warning("⚠️ FALTAN DATOS: Llena todo y sube fotos para enviar.")
+            st.warning("📝 Faltan detalles por llenar. Revisa que tengas fotos y recomendaciones.")
 
         if st.button("🚀 ENVIAR A COTIZACIÓN", type="primary", use_container_width=True, disabled=not campos_llenos):
-            status = st.status("⚙️ Procesando orden...", expanded=True)
+            status = st.status("⚙️ Procesando la orden...", expanded=True)
             
             try:
                 # 1. SUBIDA SECUENCIAL DE FOTOS
@@ -267,10 +267,10 @@ with tab_nuevo:
                         if url:
                             urls_fotos.append(url)
                         else:
-                            st.error(f"Error subiendo foto {i+1}")
+                            st.error(f"No se pudo subir la foto {i+1}")
                 
                 # 2. GENERAR PDF
-                status.write("📄 Generando PDF...")
+                status.write("📄 Generando reporte PDF...")
                 datos_pdf = {
                     "orden": orden.upper(), "tecnico": tecnico.upper(), "asesor": asesor.upper(), 
                     "modelo": modelo, "anio": anio, "fallas": fallas, "comentarios": recomendaciones
@@ -283,7 +283,7 @@ with tab_nuevo:
                 url_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
 
                 # 4. GUARDAR EN DB
-                status.write("💾 Guardando datos...")
+                status.write("💾 Guardando en el sistema...")
                 payload = {
                     "orden_placas": orden.upper(),
                     "tecnico": tecnico.upper(),
@@ -299,16 +299,16 @@ with tab_nuevo:
                 }
                 supabase.table("evidencias_taller").insert(payload).execute()
                 
-                status.update(label="✅ ¡Enviado Correctamente!", state="complete", expanded=False)
-                st.balloons()
+                status.update(label="✅ ¡Listo! La orden fue enviada correctamente.", state="complete", expanded=False)
+                # SIN GLOBOS (BALLOONS REMOVED)
                 
                 st.session_state.form_token = str(uuid.uuid4())
                 time.sleep(1.5)
                 st.rerun()
                 
             except Exception as e:
-                status.update(label="❌ Error", state="error")
-                st.error(f"Error técnico: {e}")
+                status.update(label="❌ Ocurrió un inconveniente", state="error")
+                st.error(f"Detalles del error: {e}")
 
 # --- TAB 2: HISTORIAL ---
 with tab_historial:
@@ -322,7 +322,7 @@ with tab_historial:
         st.session_state.page = 0
 
     c_s, c_x = st.columns([5, 1])
-    txt = c_s.text_input("🔍 Buscar:", key="busqueda", placeholder="Placa, modelo...", label_visibility="collapsed")
+    txt = c_s.text_input("🔍 Buscar:", key="busqueda", placeholder="Placa, modelo o técnico...", label_visibility="collapsed")
     c_x.button("✖️", on_click=limpiar_busqueda, use_container_width=True)
 
     q = supabase.table("evidencias_taller").select("*", count="exact").order("created_at", desc=True)
@@ -342,10 +342,10 @@ with tab_historial:
         total = res.count or 0
         is_search = False
 
-    st.caption(f"Registros: {total}")
+    st.caption(f"Total de registros: {total}")
 
     if not data:
-        st.info("No hay órdenes pendientes.")
+        st.info("No hay órdenes pendientes por ahora.")
     else:
         for item in data:
             try: d = datetime.fromisoformat(item['created_at']).strftime("%d %b %H:%M")
