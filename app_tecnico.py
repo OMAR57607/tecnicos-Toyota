@@ -18,41 +18,58 @@ TOYOTA_BLACK = "#000000"
 
 st.markdown(f"""
     <style>
-    /* Ocultar elementos default */
-    #MainMenu {{visibility: hidden;}}
-    footer {{visibility: hidden;}}
+    /* ... (mantén tus estilos de inputs y botones anteriores) ... */
     
-    /* Inputs más grandes para dedos de mecánicos */
-    .stTextInput input, .stSelectbox div, .stNumberInput input, .stTextArea textarea {{ 
-        font-size: 16px !important; 
-        min-height: 55px !important;
-        border-radius: 8px !important;
-    }}
-    
-    /* Botones primarios estilo Toyota */
-    div.stButton > button {{
-        height: 60px !important;
-        font-size: 18px !important;
-        font-weight: 700 !important;
-        border-radius: 8px !important;
-        transition: all 0.3s ease;
-    }}
-    
-    /* Tarjetas del historial */
+    /* NUEVA TARJETA MEJORADA */
     .report-card {{
-        background-color: #f8f9fa;
-        border-left: 5px solid {TOYOTA_RED};
-        padding: 15px;
-        margin-bottom: 15px;
-        border-radius: 5px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background-color: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 0; /* Quitamos padding del contenedor principal para manejarlo dentro */
+        margin-bottom: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        overflow: hidden; /* Para que el borde rojo no se salga */
     }}
     
-    /* Enlaces */
-    a {{ text-decoration: none !important; }}
+    .card-header {{
+        background-color: #f8f9fa;
+        padding: 12px 15px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }}
+    
+    .card-plate {{
+        font-size: 1.2rem;
+        font-weight: 800;
+        color: #333;
+    }}
+    
+    .card-model {{
+        background-color: {TOYOTA_RED}; /* Fondo ROJO */
+        color: white; /* Texto BLANCO */
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }}
+
+    .card-body {{
+        padding: 15px;
+    }}
+
+    .card-footer {{
+        padding: 10px 15px;
+        border-top: 1px dashed #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }}
     </style>
 """, unsafe_allow_html=True)
-
 # ==========================================
 # 2. GESTIÓN DE SUPABASE
 # ==========================================
@@ -277,46 +294,92 @@ with tab_nuevo:
 
 # --- TAB 2: HISTORIAL ---
 with tab_historial:
-    c_search, c_btn = st.columns([4, 1])
-    query_txt = c_search.text_input("Buscar reporte", placeholder="Placa, modelo o técnico", label_visibility="collapsed")
-    
-    if c_btn.button("🔄"):
+    # --- GESTIÓN DE ESTADO DE PAGINACIÓN ---
+    if "page" not in st.session_state: st.session_state.page = 0
+    ITEMS_PER_PAGE = 5  # Muestra 5 tarjetas por página para que sea ligero en móvil
+
+    # --- BARRA DE BÚSQUEDA ---
+    c_search, c_reset = st.columns([4, 1])
+    query_txt = c_search.text_input("🔍 Buscar:", placeholder="Placa, modelo...", label_visibility="collapsed")
+    if c_reset.button("✖️", help="Limpiar búsqueda"):
+        st.session_state.page = 0 # Resetear página al limpiar
+        query_txt = "" # (Nota: esto requiere rerun para limpiar visualmente el input, o usar session state en el input)
         st.rerun()
 
-    # Query optimizada
-    base_query = supabase.table("evidencias_taller").select("*").order("created_at", desc=True).limit(15)
-    
+    # --- CONSULTA A SUPABASE CON PAGINACIÓN ---
+    # Calculamos el rango (ej. Pagina 0: 0 a 9, Pagina 1: 10 a 19)
+    start = st.session_state.page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE - 1
+
+    query = supabase.table("evidencias_taller").select("*", count="exact").order("created_at", desc=True)
+
+    # Si hay búsqueda, NO usamos paginación estándar (o reiniciamos a pag 0)
     if query_txt:
-        # Filtro OR
         filtro = f"orden_placas.ilike.%{query_txt}%,tecnico.ilike.%{query_txt}%,auto_modelo.ilike.%{query_txt}%"
-        base_query = base_query.or_(filtro)
-    
-    data = base_query.execute().data
-    
+        query = query.or_(filtro)
+        # Nota: Al buscar, traemos los primeros 20 resultados coincidentes
+        data_response = query.limit(20).execute()
+        total_rows = len(data_response.data)
+        is_search = True
+    else:
+        # Si NO hay búsqueda, aplicamos rango de paginación
+        data_response = query.range(start, end).execute()
+        total_rows = data_response.count # Supabase nos dice cuántos hay en total
+        is_search = False
+
+    data = data_response.data
+
+    # --- VISUALIZACIÓN DE TARJETAS ---
     if not data:
-        st.info("No hay registros recientes.")
-    
-    for item in data:
-        # Parseo seguro de fecha
-        try:
-            dt = datetime.fromisoformat(item['created_at'])
-            fecha_fmt = dt.strftime("%d %b %Y - %H:%M")
-        except:
-            fecha_fmt = "Fecha desconocida"
+        st.info("📭 No se encontraron registros.")
+    else:
+        if not is_search:
+            st.caption(f"Mostrando {start + 1} - {min(end + 1, total_rows)} de {total_rows} órdenes")
+
+        for item in data:
+            # Parseo de fecha
+            try:
+                dt = datetime.fromisoformat(item['created_at'])
+                fecha_fmt = dt.strftime("%d %b %H:%M") # Ej: 13 Feb 14:30
+            except: fecha_fmt = "--/--"
+
+            # Renderizado HTML con el NUEVO DISEÑO
+            st.markdown(f"""
+                <div class="report-card">
+                    <div class="card-header">
+                        <span class="card-plate">{item['orden_placas']}</span>
+                        <span class="card-model">{item['auto_modelo']}</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="color:#555; margin-bottom:5px;">
+                            👷‍♂️ <b>Técnico:</b> {item['tecnico']}
+                        </div>
+                        <div style="color:#777; font-size:0.9em;">
+                            📅 {fecha_fmt}
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <a href="{item['url_pdf']}" target="_blank" style="color:#EB0A1E; font-weight:bold; display:flex; align-items:center gap:5px;">
+                           📄 Ver Reporte PDF
+                        </a>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # --- BOTONES DE PAGINACIÓN (SOLO SI NO ESTAMOS BUSCANDO) ---
+    if not is_search and total_rows > ITEMS_PER_PAGE:
+        c_prev, c_page, c_next = st.columns([1, 2, 1])
+        
+        with c_prev:
+            if st.button("⬅️ Anterior", disabled=(st.session_state.page == 0), use_container_width=True):
+                st.session_state.page -= 1
+                st.rerun()
+        
+        with c_page:
+            st.markdown(f"<p style='text-align:center; padding-top:10px;'>Página {st.session_state.page + 1}</p>", unsafe_allow_html=True)
             
-        st.markdown(f"""
-            <div class="report-card">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0; color:#333;">{item['orden_placas']}</h3>
-                    <span style="background:#eee; padding:2px 8px; border-radius:4px; font-size:0.8em;">{item['auto_modelo']}</span>
-                </div>
-                <div style="color:#666; font-size:0.9em; margin-top:5px;">
-                    👤 <b>{item['tecnico']}</b> &nbsp;|&nbsp; 📅 {fecha_fmt}
-                </div>
-                <div style="margin-top:10px;">
-                    <a href="{item['url_pdf']}" target="_blank" style="color:{TOYOTA_RED}; font-weight:bold;">
-                       📄 Ver PDF
-                    </a>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        with c_next:
+            # Deshabilitar si ya no hay más registros
+            if st.button("Siguiente ➡️", disabled=(end >= total_rows), use_container_width=True):
+                st.session_state.page += 1
+                st.rerun()
