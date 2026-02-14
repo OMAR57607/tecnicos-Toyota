@@ -209,7 +209,7 @@ with c_logo:
         st.markdown("<h1>🔴</h1>", unsafe_allow_html=True)
 
 with c_title:
-    st.title("Sistema Taller")
+    st.title("Cotizador Taller")
     st.caption("Recepción y Diagnóstico")
 
 tab_nuevo, tab_historial = st.tabs(["📝 NUEVA ORDEN", "📂 HISTORIAL"])
