@@ -258,7 +258,7 @@ with tab_nuevo:
         asesor = c_asesor.text_input("👨‍💼 Asesor", key=f"ase_{st.session_state.form_token}", placeholder="Ej: Laura García")
         
         c_m, c_a = st.columns([2,1])
-        modelo = c_m.selectbox("Modelo", ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Tundra", "Raize", "Otro"], key=f"mod_{st.session_state.form_token}")
+        modelo = c_m.selectbox("Modelo", ["Hilux", "Yaris", "Corolla", "RAV4", "Hiace", "Tacoma", "Camry", "Prius", "Avanza", "Tundra", "Raize", "Sienna", "Otro"], key=f"mod_{st.session_state.form_token}")
         anio = c_a.number_input("Año", 1990, 2026, 2024, key=f"yr_{st.session_state.form_token}")
         
         st.markdown("##### 🛠️ Refacciones y Diagnóstico")
