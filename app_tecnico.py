@@ -22,37 +22,22 @@ except ImportError:
     pass
 
 # ==========================================
-# 1. OPTIMIZACIÓN DE IMÁGENES (NUEVO)
+# 1. OPTIMIZACIÓN DE IMÁGENES
 # ==========================================
 def comprimir_imagen(uploaded_file):
-    """
-    Toma un archivo de Streamlit, lo redimensiona a max 1024px
-    y lo comprime a JPEG calidad 70. Retorna bytes.
-    """
     try:
-        # 1. Abrir imagen
         image = Image.open(uploaded_file)
-        
-        # 2. Convertir a RGB (necesario si llega un PNG con transparencia)
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
-            
-        # 3. Redimensionar (Thumbnail mantiene el aspecto ratio)
-        # Esto baja el consumo de RAM de 50MB a ~2MB por foto
         image.thumbnail((1024, 1024))
-        
-        # 4. Guardar en memoria (BytesIO)
         output_buffer = io.BytesIO()
         image.save(output_buffer, format="JPEG", optimize=True, quality=70)
-        
         return output_buffer.getvalue()
     except Exception as e:
         print(f"Error comprimiendo: {e}")
-        # Si falla, devolvemos el original para no romper el flujo
         return uploaded_file.getvalue()
 
 def limpiar_memoria():
-    """Fuerza la liberación de memoria RAM"""
     gc.collect()
 
 # ==========================================
@@ -63,6 +48,7 @@ st.set_page_config(page_title="Taller Toyota", page_icon="🔧", layout="centere
 TOYOTA_RED = "#EB0A1E"
 
 st.markdown(f"""
+    <meta name="google" content="notranslate">
     <style>
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
@@ -144,11 +130,9 @@ class PDFReport(FPDF):
         self.ln(5)
 
 def generar_pdf_avanzado(datos, imagenes_bytes):
-    # Optimización: PDF recibe imágenes ya comprimidas
     pdf = PDFReport()
     pdf.add_page()
     
-    # DATOS
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 10)
     pdf.set_text_color(0)
@@ -163,7 +147,6 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     pdf.cell(0, 8, f"Vehículo: {datos['modelo']} ({datos['anio']})", 0, 1)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     
-    # SECCIONES
     pdf.ln(6)
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(235, 10, 30)
@@ -181,7 +164,6 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
         pdf.set_font("Arial", '', 11)
         pdf.multi_cell(0, 6, datos['comentarios'])
 
-    # FOTOS
     if imagenes_bytes:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 12)
@@ -190,7 +172,6 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
         
         x, y = 10, 30
         for i, img_data in enumerate(imagenes_bytes):
-            # Usar tempfile eficiente
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 tmp.write(img_data)
                 name = tmp.name
@@ -202,7 +183,7 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
             try: pdf.image(name, x=x, y=y, w=80, h=60)
             except: pass
             
-            os.unlink(name) # Borrar temporal inmediatamente
+            os.unlink(name)
             
             if i % 2 == 0: x += 90
             else: x = 10; y += 70
@@ -210,21 +191,67 @@ def generar_pdf_avanzado(datos, imagenes_bytes):
     return pdf.output(dest='S').encode('latin-1')
 
 def subir_foto_worker(img_bytes, path):
-    # Modificado: Recibe bytes ya comprimidos, no el archivo original
     try:
-        name = f"{path}_{uuid.uuid4().hex[:8]}.jpg" # Forzamos extensión .jpg
+        name = f"{path}_{uuid.uuid4().hex[:8]}.jpg"
         bucket = "evidencias-taller"
-        
-        # Subir bytes comprimidos
         supabase.storage.from_(bucket).upload(name, img_bytes, {"content-type": "image/jpeg"})
-        
         return supabase.storage.from_(bucket).get_public_url(name)
     except Exception as e:
         print(f"Error subiendo: {e}")
         return None
 
 # ==========================================
-# 5. INTERFAZ PRINCIPAL
+# 4.5 AUTENTICACIÓN (NUEVO CANDADO DE SEGURIDAD)
+# ==========================================
+def check_password():
+    """Retorna True si el usuario ya inició sesión con Supabase"""
+    if "user" not in st.session_state:
+        st.session_state.user = None
+
+    if st.session_state.user is not None:
+        return True
+
+    # Interfaz de Login
+    c_logo_login, c_title_login = st.columns([1, 4]) 
+    with c_logo_login:
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=80)
+        else:
+            st.markdown("<h1>🔴</h1>", unsafe_allow_html=True)
+    with c_title_login:
+        st.title("Acceso al Taller")
+
+    st.markdown("Por favor, inicia sesión para continuar.")
+
+    with st.form("login_form"):
+        email = st.text_input("Correo Electrónico", placeholder="tu@correo.com")
+        password = st.text_input("Contraseña", type="password")
+        submit_button = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+
+        if submit_button:
+            try:
+                # Intentar iniciar sesión en Supabase
+                res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                st.session_state.user = res.user
+                st.rerun()  # Recarga la página para mostrar el contenido protegido
+            except Exception as e:
+                st.error("Credenciales incorrectas. Verifica tu correo y contraseña.")
+    return False
+
+# Ejecutar el candado antes de mostrar el resto de la app
+if not check_password():
+    st.stop()  # Detiene la ejecución aquí si no hay sesión
+
+# Opción para cerrar sesión en la barra lateral
+with st.sidebar:
+    st.write(f"Usuario: {st.session_state.user.email}")
+    if st.button("Cerrar Sesión", use_container_width=True):
+        supabase.auth.sign_out()
+        st.session_state.user = None
+        st.rerun()
+
+# ==========================================
+# 5. INTERFAZ PRINCIPAL (PROTEGIDA)
 # ==========================================
 c_logo, c_title = st.columns([1, 4]) 
 with c_logo:
@@ -280,29 +307,20 @@ with tab_nuevo:
             
             try:
                 urls_fotos = []
-                img_bytes_para_pdf = [] # Lista para guardar solo versiones comprimidas
+                img_bytes_para_pdf = []
                 
                 if fotos:
                     status.write("📸 Comprimiendo y subiendo evidencia...")
                     
-                    # PROCESAMIENTO OPTIMIZADO (UNO A UNO)
                     for i, file in enumerate(fotos):
-                        # 1. Comprimir en memoria
                         compressed_bytes = comprimir_imagen(file)
-                        
-                        # 2. Guardar para el PDF
                         img_bytes_para_pdf.append(compressed_bytes)
-                        
-                        # 3. Subir a Supabase
                         url = subir_foto_worker(compressed_bytes, f"{orden}_{tecnico}")
                         
                         if url:
                             urls_fotos.append(url)
-                        
-                        # Liberar memoria de la variable temporal en cada iteración
                         del compressed_bytes
                 
-                # 4. GENERAR PDF (Usando imágenes ligeras)
                 status.write("📄 Generando reporte PDF...")
                 datos_pdf = {
                     "orden": orden.upper(), "tecnico": tecnico.upper(), "asesor": asesor.upper(), 
@@ -310,21 +328,17 @@ with tab_nuevo:
                 }
                 pdf_bytes = generar_pdf_avanzado(datos_pdf, img_bytes_para_pdf)
                 
-                # Liberar memoria de imágenes ya usadas
                 del img_bytes_para_pdf
                 limpiar_memoria()
 
-                # 5. SUBIR PDF
                 status.write("☁️ Guardando PDF...")
                 pdf_name = f"Reporte_{orden}_{uuid.uuid4().hex[:4]}.pdf"
                 supabase.storage.from_("reportes-pdf").upload(pdf_name, pdf_bytes, {"content-type": "application/pdf"})
                 url_pdf = supabase.storage.from_("reportes-pdf").get_public_url(pdf_name)
                 
-                # Liberar memoria PDF
                 del pdf_bytes
                 limpiar_memoria()
 
-                # 6. GUARDAR EN DB
                 status.write("💾 Registrando en base de datos...")
                 payload = {
                     "orden_placas": orden.upper(), "tecnico": tecnico.upper(), "asesor": asesor.upper(),
@@ -344,7 +358,7 @@ with tab_nuevo:
                 status.update(label="❌ Ocurrió un inconveniente", state="error")
                 st.error(f"Detalles del error: {e}")
 
-# --- TAB 2: HISTORIAL (Sin cambios mayores, solo optimización visual) ---
+# --- TAB 2: HISTORIAL ---
 with tab_historial:
     if "page" not in st.session_state: st.session_state.page = 0
     if "busqueda" not in st.session_state: st.session_state.busqueda = ""
